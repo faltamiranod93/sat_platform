@@ -8,7 +8,7 @@ El diseño sigue **arquitectura hexagonal (ports & adapters)**: el dominio (serv
 ---
 
 ## 📂 Estructura del proyecto
-
+```
 sat-platform/
 ├─ pyproject.toml # dependencias y build
 ├─ README.md # este archivo
@@ -34,7 +34,7 @@ Copiar código
 ## 📂 Estructura de proyectos (layout físico)
 
 Un proyecto se organiza así:
-
+```
 Proyecto/
 ├─ 00-Config/
 │ ├─ settings.yaml # configuración de paths, CRS, patrones
