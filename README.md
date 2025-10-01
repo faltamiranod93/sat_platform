@@ -25,7 +25,7 @@ sat-platform/
 │ ├─ integration/ # integración (requiere GDAL/datos pequeños)
 │ └─ e2e/ # end-to-end (CLI con Typer runner)
 └─ 00-Config/, 01-Raw/, ... # estructura física de proyectos (ver abajo)
-
+```
 ## 📂 Estructura de proyectos (layout físico)
 
 Un proyecto se organiza así:
@@ -53,9 +53,7 @@ Proyecto/
 │ ├─ VIS-MOD/
 │ └─ REPORT/
 └─ 04-Analysis/ # notebooks, scripts, figuras
-
-yaml
-Copiar código
+```
 
 ---
 
