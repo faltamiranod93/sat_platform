@@ -93,6 +93,7 @@ output_patterns:
 SAFE: {product}, {granule}, {tile}, {sensing}, {band}, {res}
 
 Work/Products: {date}
+```
 
 🧩 Arquitectura hexagonal
 Contracts: tipos de dominio (GeoRaster, BandSet, ClassLabel, S2Asset).
@@ -110,8 +111,6 @@ CLI: expone comandos reproducibles.
 🚀 CLI (Typer)
 Ejemplos:
 
-bash
-Copiar código
 # Recortar ROI
 sat-platform roi clip --roi-id ROI1 --date 20240123
 
