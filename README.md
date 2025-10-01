@@ -26,11 +26,6 @@ sat-platform/
 │ └─ e2e/ # end-to-end (CLI con Typer runner)
 └─ 00-Config/, 01-Raw/, ... # estructura física de proyectos (ver abajo)
 
-yaml
-Copiar código
-
----
-
 ## 📂 Estructura de proyectos (layout físico)
 
 Un proyecto se organiza así:
