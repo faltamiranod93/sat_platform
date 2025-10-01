@@ -141,11 +141,12 @@ E2E (tests/e2e/): ejecución del CLI con datos sintéticos.
 
 Ejemplo:
 
-bash
-Copiar código
+```
 pytest tests/unit -q          # solo dominio
 pytest tests/integration -m gdal   # solo si tienes GDAL
 pytest tests/e2e -q
+```
+
 🧹 Calidad de código
 Linters: ruff y mypy --strict.
 
@@ -153,10 +154,10 @@ Pre-commit hooks: .pre-commit-config.yaml en la raíz asegura que no se commitea
 
 Instalación:
 
-bash
-Copiar código
+```
 pip install pre-commit ruff mypy
 pre-commit install
+```
 📌 Roadmap / fases
 Fase 0: higiene → ruff + mypy + pytest unit 100% verde.
 
