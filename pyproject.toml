@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "satplatform"
+version = "0.1.0"
+description = "Satellite processing platform"
+authors = [{ name = "faltamiranod", email = "faltamiranod93@gmail.com" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.5",
+    "pydantic-settings>=2.2",
+    "numpy>=1.24",
+    "typer>=0.12"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.optional-dependencies]
+tests = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0"
+]

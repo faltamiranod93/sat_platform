@@ -28,8 +28,21 @@ class RGB8(BaseModel):
     r: int = Field(200, ge=0, le=255)
     g: int = Field(200, ge=0, le=255)
     b: int = Field(200, ge=0, le=255)
-    def as_tuple(self) -> tuple[int, int, int]: return (self.r, self.g, self.b)
-    def to_hex(self) -> str: return f"#{self.r:02X}{self.g:02X}{self.b:02X}"
+
+    def __init__(self, *args, **kwargs):
+        # Permite RGB8(10, 20, 30) además de RGB8(r=..., g=..., b=...)
+        if args and not kwargs:
+            if len(args) != 3:
+                raise TypeError("RGB8 espera 3 argumentos posicionales (r, g, b) o keywords.")
+            kwargs = {"r": args[0], "g": args[1], "b": args[2]}
+        super().__init__(**kwargs)
+
+    def as_tuple(self) -> tuple[int, int, int]:
+        return (self.r, self.g, self.b)
+
+    def to_hex(self) -> str:
+        return f"#{self.r:02X}{self.g:02X}{self.b:02X}"
+
 
 # -------------------------
 # Etiquetas de clase

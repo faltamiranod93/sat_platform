@@ -7,7 +7,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Dict, Mapping, Optional, Tuple
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .contracts.core import ClassLabel, S2BandName
@@ -34,7 +34,8 @@ class Settings(BaseSettings):
     """
     # --- básicos ---
     project_root: Path = Field(default_factory=lambda: Path.cwd())
-    crs_out: CRSRef = Field(default_factory=lambda: CRSRef.from_epsg(32719))
+    # Importante: declaramos como str para que pydantic-settings NO intente json.loads
+    crs_out: str = Field(default="EPSG:32719")
 
     # --- estructura de trabajo (relativa a project_root) ---
     work_roi_dir: Path = Path("work/roi")
@@ -79,18 +80,6 @@ class Settings(BaseSettings):
     def _abs_root(cls, v: Path | str) -> Path:
         return Path(v).expanduser().resolve()
 
-    @field_validator("crs_out", mode="before")
-    @classmethod
-    def _parse_crs(cls, v) -> CRSRef:
-        # Acepta "EPSG:32719" o WKT o dict-like
-        if isinstance(v, CRSRef): return v
-        s = str(v).strip()
-        if s.upper().startswith("EPSG:"):
-            return CRSRef.from_epsg(int(s.split(":")[1]))
-        if WKT_START.match(s):
-            return CRSRef.from_wkt(s)
-        raise ValueError(f"crs_out inválido: {v}")
-
     @field_validator("work_roi_dir", "work_products_dir", "report_dir", mode="after")
     @classmethod
     def _rel_to_root(cls, p: Path, info) -> Path:
@@ -127,6 +116,20 @@ class Settings(BaseSettings):
                 raise ValueError(f"output_patterns[{k}] usa placeholders no permitidos: {sorted(unknown)}")
         return d
 
+    # Convertimos crs_out (str) → CRSRef DESPUÉS de construir el modelo,
+    # de modo que pydantic-settings no intente json.loads en la fase de fuentes.
+    @model_validator(mode="after")
+    def _coerce_crs_out(self) -> "Settings":
+        s = str(self.crs_out).strip()
+        if s.upper().startswith("EPSG:"):
+            code = int(s.split(":")[1])
+            object.__setattr__(self, "crs_out", CRSRef.from_epsg(code))
+            return self
+        if WKT_START.match(s):
+            object.__setattr__(self, "crs_out", CRSRef.from_wkt(s))
+            return self
+        raise ValueError(f"crs_out inválido: {s}")
+
     # ----------------------------
     # Helpers puros (sin side-effects)
     # ----------------------------
@@ -139,19 +142,23 @@ class Settings(BaseSettings):
         pat = self.input_patterns[key]
         return (self.project_root / pat.format(**fmt)).resolve()
 
+
 # Utilidad interna: detectar {placeholders}
 def _iter_placeholders(fmt: str):
     # Busca {name} muy simple; evita formatear para no explotar
     start = 0
     while True:
         i = fmt.find("{", start)
-        if i == -1: break
+        if i == -1:
+            break
         j = fmt.find("}", i + 1)
-        if j == -1: break
-        name = fmt[i+1:j].strip()
+        if j == -1:
+            break
+        name = fmt[i + 1 : j].strip()
         if name:
             yield (i, name)
         start = j + 1
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

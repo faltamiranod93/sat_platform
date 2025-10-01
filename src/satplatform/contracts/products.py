@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import MappingProxyType
-from typing import Dict, Iterable, Sequence, Set, Literal, Mapping, FrozenSet
+from typing import Iterable, Sequence, Set, Literal, Mapping, FrozenSet
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -14,7 +14,9 @@ ResolutionM = Literal[10, 20, 60]
 
 
 class Band(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    # Permite tipos arbitrarios (GeoRaster con np.ndarray adentro)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
     name: S2BandName
     raster: GeoRaster
 
@@ -26,9 +28,9 @@ class Band(BaseModel):
 class BandSet(BaseModel):
     """
     Bandas coherentes a una misma resolución.
-    - Colección inmutable en tiempo de ejecución.
+    Colección inmutable en tiempo de ejecución.
     """
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     bands: Mapping[S2BandName, GeoRaster]
     resolution_m: ResolutionM
@@ -37,7 +39,7 @@ class BandSet(BaseModel):
     @classmethod
     def _freeze_and_validate_profiles(cls, v: Mapping[S2BandName, GeoRaster]) -> Mapping[S2BandName, GeoRaster]:
         if not isinstance(v, Mapping):
-            v = dict(v)
+            v = dict(v)  # type: ignore[arg-type]
         d = dict(v)
         if not d:
             return MappingProxyType(d)
@@ -48,7 +50,7 @@ class BandSet(BaseModel):
         return MappingProxyType(d)
 
     @model_validator(mode="after")
-    def _check_resolution_vs_pixel_size(self) -> BandSet:
+    def _check_resolution_vs_pixel_size(self) -> "BandSet":
         if self.bands:
             any_raster = next(iter(self.bands.values()))
             px, py = any_raster.profile.pixel_size()
@@ -67,7 +69,7 @@ class BandSet(BaseModel):
         if missing:
             raise KeyError(f"Faltan bandas requeridas: {missing}")
 
-    def subset(self, names: Sequence[S2BandName]) -> BandSet:
+    def subset(self, names: Sequence[S2BandName]) -> "BandSet":
         self.require(names)
         sub = {n: self.bands[n] for n in names}
         return BandSet(bands=sub, resolution_m=self.resolution_m)
@@ -90,12 +92,11 @@ class BandSet(BaseModel):
 
 
 class S2Asset(BaseModel):
-    """
-    Metadatos de una escena Sentinel-2 (sin paths).
-    """
-    model_config = ConfigDict(frozen=True)
+    """Metadatos de una escena Sentinel-2 (sin paths)."""
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     scene: SceneId
+    tile_id: str
     sensing_datetime: datetime
     cloud_percent: float | None = None
 
@@ -107,12 +108,12 @@ class S2Asset(BaseModel):
 
     @field_validator("available_bands")
     @classmethod
-    def _freeze_bands(cls, v):
+    def _freeze_bands(cls, v: Iterable[S2BandName]) -> FrozenSet[S2BandName]:
         return frozenset(v)
 
     @field_validator("resolutions")
     @classmethod
-    def _freeze_resolutions(cls, v):
+    def _freeze_resolutions(cls, v: Mapping[S2BandName, ResolutionM]) -> Mapping[S2BandName, ResolutionM]:
         return MappingProxyType(dict(v))
 
     @field_validator("sensing_datetime")
@@ -123,7 +124,7 @@ class S2Asset(BaseModel):
         return dt.astimezone(timezone.utc)
 
     @model_validator(mode="after")
-    def _check_band_coherence(self):
+    def _check_band_coherence(self) -> "S2Asset":
         res_bands = frozenset(self.resolutions.keys())
         if self.available_bands and res_bands - self.available_bands:
             raise ValueError("resolutions contiene bandas no listadas en available_bands")
