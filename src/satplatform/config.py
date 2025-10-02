@@ -13,19 +13,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from .contracts.core import ClassLabel, S2BandName
 from .contracts.geo import CRSRef
 
-# Placeholders permitidos por clave (defensa temprana)
+# Placeholders permitidos por clave
 INPUT_PLACEHOLDERS: Mapping[str, Tuple[str, ...]] = MappingProxyType({
-    "s2_dir": ("tile",),
-    "band_file": ("date", "band"),
-    "roi_file": (),  # ninguno
+    "safe_dir": ("product",),
+    "granule_dir": ("product", "granule"),
+    "jp2_file": ("product", "granule", "tile", "sensing", "band", "res"),
+    "scl_file": ("product", "granule", "tile", "sensing", "res"),
+    "mask_file": ("product", "granule", "band"),
+    "roi_file": (),
 })
 OUTPUT_PLACEHOLDERS: Mapping[str, Tuple[str, ...]] = MappingProxyType({
     "stack": ("date",),
     "hist_norm": ("date",),
+    "features_hsl": ("date",),
     "classmap": ("date",),
 })
-
-WKT_START = re.compile(r"^\s*(PROJCS|GEOGCS|PROJCRS|GEOGCRS)\s*[\(\[]", re.IGNORECASE)
 
 class Settings(BaseSettings):
     """
@@ -49,21 +51,20 @@ class Settings(BaseSettings):
     band_order: tuple[S2BandName, ...] = ("B02", "B03", "B04")  # ajusta a tu flujo
     classes: tuple[ClassLabel, ...] = ()  # inmutable
 
-    # --- patrones de I/O (centralizados, relativos a project_root) ---
-    input_patterns: Dict[str, str] = Field(
-        default_factory=lambda: {
-            "s2_dir": "data/s2/{tile}",
-            "band_file": "{date}_{band}.tif",
-            "roi_file": "data/roi/roi.geojson",
-        }
-    )
-    output_patterns: Dict[str, str] = Field(
-        default_factory=lambda: {
-            "stack": "artifacts/{date}/stack.tif",
-            "hist_norm": "artifacts/{date}/stack_hn.tif",
-            "classmap": "artifacts/{date}/classmap.tif",
-        }
-    )
+    input_patterns: Dict[str, str] = Field(default_factory=lambda: {
+        "safe_dir": "01-Raw/s2/{product}.SAFE",
+        "granule_dir": "01-Raw/s2/{product}.SAFE/GRANULE/{granule}",
+        "jp2_file": "01-Raw/s2/{product}.SAFE/GRANULE/{granule}/IMG_DATA/R{res}/T{tile}_{sensing}_{band}_{res}.jp2",
+        "scl_file": "01-Raw/s2/{product}.SAFE/GRANULE/{granule}/IMG_DATA/R{res}/T{tile}_{sensing}_SCL_{res}.jp2",
+        "mask_file": "01-Raw/s2/{product}.SAFE/GRANULE/{granule}/QI_DATA/MSK_QUALIT_{band}.jp2",
+        "roi_file": "00-Config/roi_master.geojson",
+    })
+    output_patterns: Dict[str, str] = Field(default_factory=lambda: {
+        "stack": "02-Work/STACK/{date}/stack.tif",
+        "hist_norm": "02-Work/HIST-NORM/{date}/hn.tif",
+        "features_hsl": "02-Work/FEATURES/{date}/hsl.tif",
+        "classmap": "03-Products/CLASSMAP/{date}/classmap.tif",
+    })
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -79,6 +80,15 @@ class Settings(BaseSettings):
     @classmethod
     def _abs_root(cls, v: Path | str) -> Path:
         return Path(v).expanduser().resolve()
+    
+    @field_validator("crs_out", mode="before")
+    @classmethod
+    def _parse_crs(cls, v) -> CRSRef:
+        if isinstance(v, CRSRef): return v
+        s = str(v).strip()
+        if s.upper().startswith("EPSG:"):
+            return CRSRef.from_epsg(int(s.split(":")[1]))
+        raise ValueError(f"crs_out inválido: {v}")
 
     @field_validator("work_roi_dir", "work_products_dir", "report_dir", mode="after")
     @classmethod
@@ -96,7 +106,7 @@ class Settings(BaseSettings):
 
     @field_validator("input_patterns")
     @classmethod
-    def _validate_input_patterns(cls, d: Dict[str, str]) -> Dict[str, str]:
+    def _check_in(cls, d: Dict[str, str]) -> Dict[str, str]:
         for k, pat in d.items():
             allowed = set(INPUT_PLACEHOLDERS.get(k, ()))
             used = {frag[1] for frag in _iter_placeholders(pat)}
@@ -107,7 +117,7 @@ class Settings(BaseSettings):
 
     @field_validator("output_patterns")
     @classmethod
-    def _validate_output_patterns(cls, d: Dict[str, str]) -> Dict[str, str]:
+    def _check_out(cls, d: Dict[str, str]) -> Dict[str, str]:
         for k, pat in d.items():
             allowed = set(OUTPUT_PLACEHOLDERS.get(k, ()))
             used = {frag[1] for frag in _iter_placeholders(pat)}
@@ -116,30 +126,16 @@ class Settings(BaseSettings):
                 raise ValueError(f"output_patterns[{k}] usa placeholders no permitidos: {sorted(unknown)}")
         return d
 
-    # Convertimos crs_out (str) → CRSRef DESPUÉS de construir el modelo,
-    # de modo que pydantic-settings no intente json.loads en la fase de fuentes.
-    @model_validator(mode="after")
-    def _coerce_crs_out(self) -> "Settings":
-        s = str(self.crs_out).strip()
-        if s.upper().startswith("EPSG:"):
-            code = int(s.split(":")[1])
-            object.__setattr__(self, "crs_out", CRSRef.from_epsg(code))
-            return self
-        if WKT_START.match(s):
-            object.__setattr__(self, "crs_out", CRSRef.from_wkt(s))
-            return self
-        raise ValueError(f"crs_out inválido: {s}")
-
     # ----------------------------
     # Helpers puros (sin side-effects)
     # ----------------------------
+    def in_path(self, key: str, **fmt) -> Path:
+        pat = self.input_patterns[key]
+        return (self.project_root / pat.format(**fmt)).resolve()
+    
     def out_path(self, key: str, **fmt) -> Path:
         """Resuelve patrón de salida (no crea carpetas)."""
         pat = self.output_patterns[key]
-        return (self.project_root / pat.format(**fmt)).resolve()
-
-    def in_path(self, key: str, **fmt) -> Path:
-        pat = self.input_patterns[key]
         return (self.project_root / pat.format(**fmt)).resolve()
 
 

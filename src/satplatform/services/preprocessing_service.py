@@ -97,11 +97,13 @@ class RGB2HSLResult:
 
 @dataclass
 class PreprocessingService:
-    reader: RasterReaderPort
-    writer: RasterWriterPort
-    preproc: PreprocessingPort
+    reader: Optional[object] = None
+    writer: Optional[object] = None
+    preproc: Optional[object] = None
     clipper: Optional[ROIClipperPort] = None
     settings: Settings = field(default_factory=get_settings)
+    
+    REQUIRED_RGB: tuple[str, str, str] = ("B02", "B03", "B04")
 
     # ---------- Helpers ----------
     @staticmethod
@@ -190,7 +192,7 @@ class PreprocessingService:
             resolution_m=res_m,
         )
 
-    def rgb_to_hsl(self, r_uri: str, g_uri: str, b_uri: str, spec: RGB2HSLSpec) -> RGB2HSLResult:
+    def rgb_to_hsl(self, bandset /*: BandSet*/, order: Sequence[str] = ("B02","B03","B04")):
         roi_crs = spec.roi_crs or self.settings.crs_out
         r = self._maybe_clip(self.reader.read(r_uri), spec.roi_geojson, roi_crs)
         g = self._maybe_clip(self.reader.read(g_uri), spec.roi_geojson, roi_crs)

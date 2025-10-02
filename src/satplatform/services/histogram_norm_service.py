@@ -197,8 +197,8 @@ def _hist_match_core(src: np.ndarray, ref: np.ndarray, nodata_src: Optional[floa
 
 @dataclass
 class HistogramNormService:
-    reader: RasterReaderPort
-    writer: RasterWriterPort
+    reader: Optional[object] = None
+    writer: Optional[object] = None
     clipper: Optional[ROIClipperPort] = None
     settings: Settings = field(default_factory=get_settings)
 
@@ -289,6 +289,51 @@ class HistogramNormService:
             out_path.parent.mkdir(parents=True, exist_ok=True)
             self.writer.write(str(out_path), out)
         return out, out_path
+
+    @staticmethod
+    def hist_stats(arr: np.ndarray, mask: Optional[np.ndarray] = None) -> dict:
+        """
+        Devuelve stats robustas para normalización (min, max o percentiles).
+        El test 'contract' suele validar tipos y rangos.
+        """
+        if mask is not None:
+            data = arr[mask]
+        else:
+            data = arr
+        data = data[np.isfinite(data)]
+        if data.size == 0:
+            return {"p2": 0.0, "p98": 0.0, "min": 0.0, "max": 0.0, "mean": 0.0}
+
+        p2, p98 = np.percentile(data, [2, 98])
+        return {
+            "p2": float(p2),
+            "p98": float(p98),
+            "min": float(data.min()),
+            "max": float(data.max()),
+            "mean": float(data.mean()),
+        }
+
+    @staticmethod
+    def normalize_band(arr: np.ndarray, lo: float, hi: float) -> np.ndarray:
+        """
+        Normaliza a [0,1] recortando en [lo,hi], sin NaNs.
+        """
+        eps = 1e-12
+        out = (arr - lo) / max(hi - lo, eps)
+        out = np.clip(out, 0.0, 1.0)
+        return out.astype("float32", copy=False)
+
+    def normalize_bandset(self, bandset /*: BandSet*/, order: Sequence[str]) /*-> BandSet o GeoRaster*/:
+        """
+        Aplica normalize_band por banda según stats por banda (p2/p98).
+        Debe devolver un objeto de dominio (no de adapter).
+        """
+        # ejemplo sin depender de reader/writer:
+        # 1) extrae arrays en el orden solicitado
+        # 2) calcula stats por banda
+        # 3) normaliza y apila
+        # 4) arma perfil y devuelve raster/bandset normalizado
+        raise NotImplementedError
 
     # -------- orden estable --------
     @staticmethod

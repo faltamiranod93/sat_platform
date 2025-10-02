@@ -1,5 +1,6 @@
 # src/satplatform/services/classmap_service.py
 from __future__ import annotations
+from dataclasses import dataclass, field
 
 """
 Servicio de construcción de CLASSMAP (inspiración "v5"), contracts-first.
@@ -9,7 +10,6 @@ Pipeline determinista:
 No asume backends concretos: todo va vía *ports*.
 """
 
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
@@ -71,6 +71,8 @@ class ClassMapResult:
 
 @dataclass
 class ClassMapService:
+    classmap_port: any
+    pixel_port: any
     reader: RasterReaderPort
     writer: RasterWriterPort
     classifier: PixelClassifierPort
@@ -80,6 +82,11 @@ class ClassMapService:
     ql_exporter: Optional[QuicklookExporterPort] = None
     reporter: Optional[ReportExporterPort] = None
     settings: Settings = field(default_factory=get_settings)
+    
+    # Si quieres tolerar también posicional:
+    def __init__(self, classmap_port, pixel_port):
+        self.classmap_port = classmap_port
+        self.pixel_port = pixel_port
 
     # --------- API principal ---------
     def run(self, inputs: ClassMapInputs, spec: ClassMapSpec) -> ClassMapResult:
@@ -115,6 +122,7 @@ class ClassMapService:
             band_order=band_order,
             resolution_m=res_m,
         )
+        raise NotImplementedError
 
     # --------- Fases internas ---------
     def _load_align(self, band_uris: Mapping[S2BandName, str], spec: ClassMapSpec) -> Tuple[Dict[S2BandName, GeoRaster], GeoProfile]:

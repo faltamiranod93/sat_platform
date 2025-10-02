@@ -1,45 +1,34 @@
-# src/satplatform/composition/di.py
 from __future__ import annotations
-import json, yaml
 from pathlib import Path
+import json
+import yaml
 
 from ..config import Settings
-from ..adapters.gdal_raster_reader import GdalRasterReader
-from ..adapters.gdal_raster_writer import GdalRasterWriter
-from ..adapters.gdalwarp_cli import GdalWarpClipper
-from ..adapters.legacy_histnorm_adapter import LegacyHistNormAdapter
-from ..adapters.legacy_pixelclass_adapter import LegacyPixelClassifier
-from ..adapters.legacy_classmap_adapter import LegacyClassMapAdapter
+from ..contracts.core import ClassLabel, MacroClass, RGB8
 
-from ..services.preprocessing_service import PreprocessingService
-from ..services.classmap_service import ClassMapService
-
-def load_settings(config_path: str | Path = "00-Config/settings.yaml") -> Settings:
-    with open(config_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    # construye Settings; pydantic validará tipos/placeholders
+def load_settings_from_yaml(path: Path) -> Settings:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return Settings(**data)
 
-def load_classes_json(p: str | Path = "00-Config/class_labels.json"):
-    with open(p, "r", encoding="utf-8") as f:
-        return json.load(f)
+def load_class_labels(path: Path) -> tuple[ClassLabel, ...]:
+    items = json.loads(path.read_text(encoding="utf-8"))
+    out: list[ClassLabel] = []
+    for it in items:
+        out.append(
+            ClassLabel(
+                id=int(it["id"]),
+                name=str(it["name"]),
+                macro=MacroClass(it["macro"]),
+                color=RGB8(**it.get("color", {})),
+            )
+        )
+    return tuple(out)
 
-def build_services():
-    settings = load_settings()
-    reader = GdalRasterReader()
-    writer = GdalRasterWriter()
-    clipper = GdalWarpClipper(raster_reader=reader, raster_writer=writer, gdalwarp_exe=(str(settings.gdalwarp_exe) if settings.gdalwarp_exe else None))
-    preproc_adapter = LegacyHistNormAdapter()
-
-    # Pixel-classifier y classmap adapter
-    classes = load_classes_json()
-    classifier = LegacyPixelClassifier(classes_def=tuple(
-        __import__("satplatform.contracts.core", fromlist=["ClassLabel","RGB8","MacroClass"]).core.ClassLabel(**c)  # opcional: o construye con pydantic
-        for c in classes
-    ))  # si prefieres, conviértelo explícitamente
-
-    cmapper = LegacyClassMapAdapter()
-
-    preproc_svc = PreprocessingService(reader=reader, writer=writer, preproc=preproc_adapter, clipper=clipper, settings=settings)
-    classmap_svc = ClassMapService(reader=reader, writer=writer, classifier=classifier, cmapper=cmapper, preproc=preproc_adapter, clipper=clipper, settings=settings)
-    return settings, preproc_svc, classmap_svc
+def build_settings(project_root: Path) -> Settings:
+    cfg = (project_root / "00-Config" / "settings.yaml").resolve()
+    st = load_settings_from_yaml(cfg)
+    if not st.classes:
+        labels_json = (project_root / "00-Config" / "class_labels.json").resolve()
+        if labels_json.exists():
+            st = st.model_copy(update={"classes": load_class_labels(labels_json)})
+    return st
