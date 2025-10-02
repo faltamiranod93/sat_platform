@@ -7,7 +7,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Dict, Mapping, Optional, Tuple
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .contracts.core import ClassLabel, S2BandName
@@ -29,15 +29,16 @@ OUTPUT_PLACEHOLDERS: Mapping[str, Tuple[str, ...]] = MappingProxyType({
     "classmap": ("date",),
 })
 
-class Settings(BaseSettings):
+class Settings(BaseModel):
     """
     Config unificada del proyecto. No toca disco.
     Debe ser construida y provista por composition/di.py (CLI/UI/adapters).
     """
     # --- básicos ---
-    project_root: Path = Field(default_factory=lambda: Path.cwd())
+    model_config = ConfigDict(frozen=True)
+    project_root: Path
     # Importante: declaramos como str para que pydantic-settings NO intente json.loads
-    crs_out: str = Field(default="EPSG:32719")
+    crs_out: str = "EPSG:32719"
 
     # --- estructura de trabajo (relativa a project_root) ---
     work_roi_dir: Path = Path("work/roi")
@@ -82,6 +83,18 @@ class Settings(BaseSettings):
         return Path(v).expanduser().resolve()
     
     @field_validator("crs_out", mode="before")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        v2 = v.strip()
+        if not v2:
+            raise ValueError("crs_out no puede ser vacío")
+        return v2
+    def crs_out_ref(self) -> CRSRef:
+        s = self.crs_out.strip()
+        if s.upper().startswith("EPSG:"):
+            code = int(s.split(":")[1])
+            return CRSRef.from_epsg(code)
+        return CRSRef.from_wkt(s)
     @classmethod
     def _parse_crs(cls, v) -> CRSRef:
         if isinstance(v, CRSRef): return v

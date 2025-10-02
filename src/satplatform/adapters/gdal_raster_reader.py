@@ -1,8 +1,8 @@
-## `src/satplatform/adapters/gdal_raster_reader.py`
+# src/satplatform/adapters/gdal_raster_reader.py
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Tuple, Optional
 
 import os
 import math
@@ -17,13 +17,19 @@ except Exception:  # pragma: no cover
     _HAS_RASTERIO = False
 
 try:  # GDAL path
-    from osgeo import gdal, osr
+    from osgeo import gdal, osr  # type: ignore
+    try:
+        from osgeo import gdal_array  # type: ignore
+        _HAS_GDAL_ARRAY = True
+    except Exception:  # pragma: no cover
+        _HAS_GDAL_ARRAY = False
     _HAS_GDAL = True
 except Exception:  # pragma: no cover
     _HAS_GDAL = False
+    _HAS_GDAL_ARRAY = False
 
 try:  # tifffile minimal path (no georeferencing)
-    import tifffile as tiff
+    import tifffile as tiff  # type: ignore
     _HAS_TIFFILE = True
 except Exception:  # pragma: no cover
     _HAS_TIFFILE = False
@@ -53,6 +59,38 @@ def _affine_to_gt(a: "Affine") -> GeoTransform:
     return (a.c, a.a, a.b, a.f, a.d, a.e)
 
 
+def _rasterio_crs_to_crsref(crs_obj) -> CRSRef:
+    """Convierte rasterio CRS → CRSRef (intenta EPSG, si no WKT, si no vacío)."""
+    if not crs_obj:
+        return CRSRef()
+    # EPSG si se puede
+    try:
+        epsg = crs_obj.to_epsg()
+    except Exception:
+        epsg = None
+    if epsg is not None:
+        return CRSRef.from_epsg(int(epsg))
+    # WKT como fallback
+    try:
+        wkt = crs_obj.to_wkt()
+    except Exception:
+        wkt = None
+    return CRSRef.from_wkt(wkt) if wkt else CRSRef()
+
+
+def _gdal_datatype_to_np_dtype(dt_code: int) -> np.dtype:
+    """Mapea GDALDataType a numpy.dtype sin leer la banda completa."""
+    if _HAS_GDAL_ARRAY:
+        try:
+            np_code = gdal_array.GDALTypeCodeToNumericTypeCode(dt_code)
+            if np_code is not None:
+                return np.dtype(np_code)
+        except Exception:
+            pass
+    # fallback conservador
+    return np.dtype("float32")
+
+
 @dataclass(frozen=True)
 class GdalRasterReader(RasterReaderPort):
     """Lector de raster. Prefiere rasterio; si no, GDAL; último recurso, tifffile.
@@ -61,6 +99,7 @@ class GdalRasterReader(RasterReaderPort):
     debes pasar `band_index` (1-based si viene de GDAL/rasterio).
     """
 
+    # --------------- rasterio ---------------
     def _read_with_rasterio(self, uri: str, band_index: int | None) -> GeoRaster:
         assert _HAS_RASTERIO
         with rasterio.open(uri) as ds:
@@ -68,27 +107,30 @@ class GdalRasterReader(RasterReaderPort):
             arr = ds.read(idx)
             if arr.ndim != 2:
                 raise ValueError("Se esperaba banda 2D (count==1)")
+            crs_ref = _rasterio_crs_to_crsref(ds.crs)
             profile = GeoProfile(
                 count=1,
                 dtype=_np_to_dtype_str(arr.dtype),
                 width=ds.width,
                 height=ds.height,
                 transform=_affine_to_gt(ds.transform),
-                crs=CRSRef.from_epsg(int(ds.crs.to_epsg())) if ds.crs else CRSRef(),
+                crs=crs_ref,
                 nodata=float(ds.nodata) if ds.nodata is not None else None,
             )
-            return GeoRaster(data=arr, profile=profile)
+            return GeoRaster(arr, profile)
 
     def _profile_with_rasterio(self, uri: str) -> GeoProfile:
         assert _HAS_RASTERIO
         with rasterio.open(uri) as ds:
+            crs_ref = _rasterio_crs_to_crsref(ds.crs)
+            dtype0 = np.dtype(ds.dtypes[0]) if ds.dtypes and ds.dtypes[0] else np.dtype("float32")
             return GeoProfile(
                 count=ds.count,
-                dtype=_np_to_dtype_str(np.dtype(ds.dtypes[0])),
+                dtype=_np_to_dtype_str(dtype0),
                 width=ds.width,
                 height=ds.height,
                 transform=_affine_to_gt(ds.transform),
-                crs=CRSRef.from_epsg(int(ds.crs.to_epsg())) if ds.crs else CRSRef(),
+                crs=crs_ref,
                 nodata=float(ds.nodata) if ds.nodata is not None else None,
             )
 
@@ -97,6 +139,7 @@ class GdalRasterReader(RasterReaderPort):
         with rasterio.open(uri) as ds:
             return ds.width, ds.height
 
+    # --------------- GDAL ---------------
     def _read_with_gdal(self, uri: str, band_index: int | None) -> GeoRaster:
         assert _HAS_GDAL
         ds = gdal.Open(uri, gdal.GA_ReadOnly)
@@ -133,18 +176,21 @@ class GdalRasterReader(RasterReaderPort):
             w, h = ds.RasterXSize, ds.RasterYSize
             srs_wkt = ds.GetProjection() or None
             band = ds.GetRasterBand(1)
+            np_dt = _gdal_datatype_to_np_dtype(band.DataType)
+            nodata = band.GetNoDataValue()
             return GeoProfile(
                 count=ds.RasterCount,
-                dtype=_np_to_dtype_str(np.dtype(band.DataType)),
+                dtype=_np_to_dtype_str(np_dt),
                 width=w,
                 height=h,
                 transform=(gt[0], gt[1], gt[2], gt[3], gt[4], gt[5]),
                 crs=CRSRef.from_wkt(srs_wkt) if srs_wkt else CRSRef(),
-                nodata=float(band.GetNoDataValue()) if band.GetNoDataValue() is not None else None,
+                nodata=float(nodata) if nodata is not None and not math.isnan(nodata) else None,
             )
         finally:
             ds = None
 
+    # --------------- tifffile ---------------
     def _read_with_tifffile(self, uri: str) -> GeoRaster:
         assert _HAS_TIFFILE
         arr = tiff.imread(uri)
@@ -164,7 +210,7 @@ class GdalRasterReader(RasterReaderPort):
         )
         return GeoRaster(data=arr, profile=profile)
 
-    # --- RasterReaderPort ---
+    # --------------- RasterReaderPort ---------------
     def read(self, uri: str, band_index: int | None = None) -> GeoRaster:
         if _HAS_RASTERIO:
             return self._read_with_rasterio(uri, band_index)

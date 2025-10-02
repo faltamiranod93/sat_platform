@@ -67,9 +67,17 @@ class ClassLabel(BaseModel):
             raise ValueError("name no puede ser vacío")
         return v2
 
+
 # -------------------------
 # Identidad de escena
 # -------------------------
+# ÚNICA convención de fecha para escenas (YYYYMMDD)
+SCENE_DATE_FMT = "%Y%m%d"
+
+def scene_date_token(d: date) -> str:
+    """Token de fecha determinista usado en paths/IDs de escena."""
+    return d.strftime(SCENE_DATE_FMT)
+
 # zona 1..60, banda latitudinal C..X (sin I/O), 2 letras (sin I/O)
 _MGRS_TILE_RE = re.compile(
     r"^(?P<zone>(?:[1-9]|[1-5][0-9]|60))(?P<band>[C-HJ-NP-X])(?P<sq>[A-HJ-NP-Z]{2})$"
@@ -89,8 +97,21 @@ class SceneId(BaseModel):
         m = _MGRS_TILE_RE.match(v2)
         if not m:
             raise ValueError(f"tile MGRS inválido: {v}")
-        # opcional: validez semántica ya garantizada por regex (1..60)
         return v2
+
+    # ---- Serialización determinista para paths/IDs ----
+    def date_token(self) -> str:
+        return scene_date_token(self.date)
+
+    def token(self) -> str:
+        """'YYYYMMDD_TILE' si hay tile; si no, 'YYYYMMDD'."""
+        d = self.date_token()
+        return f"{d}_{self.tile}" if self.tile else d
+
+    def slug(self) -> str:
+        """Lowercase del token (por si el FS es case-sensitive/insensible)."""
+        return self.token().lower()
+
 
 # -------------------------
 # Calibraciones / normalización
@@ -122,10 +143,10 @@ class CalibrationSpec(BaseModel):
             raise ValueError("checksum debe ser SHA1(40) o SHA256(64) hex")
         return v
 
+
 # -------------------------
 # Ejecuciones / auditoría
 # -------------------------
-# core.py
 class Stage(str, Enum):
     STACK = "stack"
     HIST_NORM = "hist_norm"
@@ -149,9 +170,3 @@ class RunMeta(BaseModel):
         if self.ended_at is None:
             return None
         return (self.ended_at - self.started_at).total_seconds()
-
-class RunError(BaseModel):
-    model_config = ConfigDict(frozen=True)
-    stage: Stage
-    message: str
-    detail: str | None = None

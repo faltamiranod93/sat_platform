@@ -1,37 +1,77 @@
-# src/satplatform/ports/catalog.py
+# =============================
+# FILE: src/satplatform/ports/catalog.py
+# =============================
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
-from typing import Mapping, Sequence, Protocol, runtime_checkable, Optional
+from datetime import date, datetime
+from pathlib import Path
+from typing import Iterable, Mapping, Optional, Protocol, Sequence
 
-from ..contracts.core import SceneId, S2BandName
-from ..contracts.products import S2Asset
-from ..contracts.geo import CRSRef, Bounds
+from pydantic import BaseModel, ConfigDict, field_validator
 
-URI = str
 
-@dataclass(frozen=True)
-class CatalogItem:
-    """Item del catálogo con metadatos + URIs por banda."""
-    asset: S2Asset
-    band_uris: Mapping[S2BandName, URI]  # p.ej. GeoTIFFs por banda
-    thumbnail_uri: Optional[URI] = None  # opcional (quicklook/thumbnail)
+class ROIItem(BaseModel):
+    """Unidad lógica de ROI (región de interés) del proyecto."""
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
-@dataclass(frozen=True)
-class CatalogQuery:
-    date_from: date
-    date_to: date
-    tile: Optional[str] = None          # MGRS (e.g., "19HFE")
-    cloud_max: Optional[float] = None   # 0..100
-    crs: Optional[CRSRef] = None
-    bounds: Optional[Bounds] = None     # filtrar por AOI
+    roi_id: str
+    name: Optional[str] = None
+    geom_path: Optional[Path] = None  # .shp/.geojson/.gpkg
+    epsg: Optional[int] = None
+    extras: Mapping[str, object] = {}
 
-@runtime_checkable
-class S2CatalogPort(Protocol):
-    """Descubrimiento/búsqueda de escenas y URIs de bandas."""
-    def find(self, q: CatalogQuery) -> Sequence[CatalogItem]: ...
-    def get(self, scene: SceneId) -> Optional[CatalogItem]: ...
-    def ping(self) -> bool: ...  # salud del backend (STAC/API/FS)
 
-__all__ = ["S2CatalogPort", "CatalogItem", "CatalogQuery", "URI"]
+class MosaicItem(BaseModel):
+    """Mosaicos o colecciones asociadas a un ROI o a la escena base.
+    Ej.: mosaicos mensuales, por nubes, o por campaña.
+    """
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    mosaic_id: str
+    roi_id: Optional[str] = None
+    acq_date: Optional[date] = None
+    product_path: Optional[Path] = None  # carpeta o archivo representativo
+    crs: Optional[str] = None
+    res_m: Optional[int] = None
+    sensor: Optional[str] = None  # e.g., 'S2'
+    cloud_pct: Optional[float] = None
+    extras: Mapping[str, object] = {}
+
+
+class CatalogItem(BaseModel):
+    """Entrada de catálogo combinada (opcional) para consumo por servicios.
+    Representa una unidad procesable (activo/raster) vinculada a ROI/Mosaico.
+    """
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    roi: Optional[ROIItem] = None
+    mosaic: Optional[MosaicItem] = None
+    asset_path: Optional[Path] = None  # p.ej. ruta a GeoTIFF/JP2
+    band: Optional[str] = None
+    date: Optional[date] = None
+    crs: Optional[str] = None
+    res_m: Optional[int] = None
+    extras: Mapping[str, object] = {}
+
+
+class CatalogPort(Protocol):
+    """Puerto de alto nivel para obtener ROIs, mosaicos y activos desde un origen.
+    Detrás del puerto, el origen puede ser CSV, DB, API, etc.
+    """
+
+    def list_rois(self) -> Sequence[ROIItem]:
+        ...
+
+    def list_mosaics(self, roi_id: Optional[str] = None) -> Sequence[MosaicItem]:
+        ...
+
+    def iter_assets(
+        self,
+        roi_id: Optional[str] = None,
+        mosaic_id: Optional[str] = None,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+    ) -> Iterable[CatalogItem]:
+        """Itera activos (raster/productos) filtrables por ROI, mosaico y fecha."""
+        ...
