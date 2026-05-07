@@ -1,188 +1,898 @@
-# s_sat
-"Repository created for multispectral satellital imagery investigation"
 # sat-platform
 
-**sat-platform** es una plataforma modular para procesar imágenes multiespectrales de Sentinel-2 aplicada a tranques de relaves y monitoreo ambiental.  
-El diseño sigue **arquitectura hexagonal (ports & adapters)**: el dominio (servicios + contratos) no depende de frameworks ni librerías externas. Las implementaciones concretas (GDAL, exportadores, legacy scripts) se encapsulan en *adapters*.
+> Plataforma modular para procesamiento de imágenes multiespectrales Sentinel-2 aplicada a tranques de relaves y monitoreo ambiental.
 
 ---
 
-## 📂 Estructura del proyecto
-```
-sat-platform/
-├─ pyproject.toml # dependencias y build
-├─ README.md # este archivo
-├─ src/satplatform/ # código fuente
-│ ├─ contracts/ # DTOs de dominio (GeoRaster, BandSet, etc.)
-│ ├─ ports/ # Protocolos (interfaces) de entrada/salida
-│ ├─ services/ # lógica de dominio pura
-│ ├─ adapters/ # adapters concretos (GDAL, legacy, exportadores)
-│ ├─ composition/di.py # dependency injection: wiring puertos→adapters
-│ ├─ config.py # Settings y validación de placeholders
-│ └─ cli.py # CLI (Typer) con comandos reproducibles
-├─ tests/ # suite de tests
-│ ├─ unit/ # unit tests (dominio puro, sin I/O)
-│ ├─ integration/ # integración (requiere GDAL/datos pequeños)
-│ └─ e2e/ # end-to-end (CLI con Typer runner)
-└─ 00-Config/, 01-Raw/, ... # estructura física de proyectos (ver abajo)
-```
-## 📂 Estructura de proyectos (layout físico)
+## Estado actual del proyecto
 
-Un proyecto se organiza así:
+> **Actualizado: abril 2025**
+> Este README refleja el estado real del código, no solo las intenciones del diseño.
+
+| Componente | Estado | Notas |
+|---|---|---|
+| `contracts/core.py` | ✅ Estable | `RGB8`, `ClassLabel`, `SceneId`, `RunMeta` completos y validados |
+| `contracts/geo.py` | ✅ Estable | `CRSRef`, `GeoProfile`, `GeoRaster`, `validate_profile_compat` sólidos |
+| `contracts/products.py` | ✅ Estable | `BandSet`, `S2Asset` con inmutabilidad garantizada |
+| `ports/` | ✅ Estable | Todos los Protocols definidos y documentados |
+| `adapters/gdal_raster_reader.py` | ✅ Funcional | Fallback rasterio → GDAL → tifffile |
+| `adapters/gdal_raster_writer.py` | ✅ Funcional | Escritura GeoTIFF/COG |
+| `adapters/legacy_histnorm` | 🟡 Parcial | Normalización RGB→HSL incorrecta (en corrección) |
+| `adapters/legacy_pixelclass` | 🔴 Bug activo | `bands.has()` no existe en `BandSet` — usar `b in bands.bands` |
+| `services/classmap_service.py` | 🟢 Funcional | Pipeline `run()` operativo |
+| `services/preprocessing_service.py` | 🔴 Bug activo | Helpers sin `@staticmethod` → `NameError` en runtime |
+| `services/histogram_norm_service.py` | 🔴 Bug activo | `BandSet` no importado en `normalize_bandset` |
+| `services/spectral_service.py` | 🟡 Parcial | Solo 3 índices disponibles (NDVI, NDWI, NDBI) |
+| `services/training_service.py` | 🟡 Aislado | Funciones `build_dataset`/`split` sin conexión al pipeline |
+| `config.py` | 🔴 Bug activo | Doble `model_config` — `frozen=True` se sobreescribe |
+| `composition/di.py` | 🔴 Incompleto | Solo construye `Settings`; no instancia servicios |
+| `cli.py` | 🟡 Parcial | Funcional con `argparse`; Typer previsto para Fase 6 |
+| `cli-v2.py` | ⚠️ Legacy | Script standalone sin arquitectura; mover a `legacy/` |
+| `tests/` | ⬜ Pendiente | Suite no implementada aún |
+| CI/CD | ⬜ Pendiente | GitHub Actions no configurado |
+
+---
+
+## Tabla de contenidos
+
+1. [¿Qué es sat-platform?](#qué-es-sat-platform)
+2. [Arquitectura hexagonal](#arquitectura-hexagonal)
+3. [Estructura del proyecto](#estructura-del-proyecto)
+4. [Instalación](#instalación)
+5. [Configuración](#configuración)
+6. [Flujo de trabajo completo](#flujo-de-trabajo-completo)
+7. [CLI — referencia de comandos](#cli--referencia-de-comandos)
+8. [Índices espectrales disponibles](#índices-espectrales-disponibles)
+9. [Clases de cobertura](#clases-de-cobertura)
+10. [Extender la plataforma](#extender-la-plataforma)
+11. [Tests](#tests)
+12. [Decisiones de diseño](#decisiones-de-diseño)
+13. [Limitaciones conocidas](#limitaciones-conocidas)
+14. [Contribuir](#contribuir)
+15. [Entorno reproducible](#entorno-reproducible)
+16. [Roadmap por fases](#roadmap-por-fases)
+17. [Referencias](#referencias)
+18. [Licencia](#licencia)
+
+---
+
+## ¿Qué es sat-platform?
+
+`sat-platform` procesa imágenes multiespectrales de Sentinel-2 para producir classmaps de cobertura superficial sobre áreas de interés, con foco en **tranques de relaves** y monitoreo ambiental. El pipeline es determinista y reproducible: dadas las mismas entradas y configuración, siempre produce los mismos productos.
+
+**Capacidades actuales:**
+
+- Lectura de bandas Sentinel-2 (JP2, GeoTIFF, COG) vía rasterio o GDAL
+- Recorte a región de interés (ROI) con GeoJSON o WKT
+- Normalización por histograma (percent-clip, z-score, min-max, equalización, matching)
+- Cálculo de índices espectrales (NDVI, NDWI, NDBI)
+- Conversión RGB→HSL para features espectrales
+- Clasificación por píxel mediante reglas o modelo externo
+- Exportación de classmaps como GeoTIFF y quicklook PNG
+- Gestión de configuración por proyecto vía `settings.yaml`
+
+---
+
+## Arquitectura hexagonal
+
+El diseño sigue el patrón **Ports & Adapters**: el dominio no depende de ninguna librería externa. Las implementaciones concretas (GDAL, rasterio, sklearn) viven en adapters que se conectan vía ports en `composition/di.py`.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                          CLI / UI                           │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ usa
+┌──────────────────────────▼──────────────────────────────────┐
+│                  composition/di.py                          │
+│          (wiring: ports ←→ adapters ←→ services)            │
+└───────┬──────────────────┬──────────────────────────────────┘
+        │                  │
+┌───────▼──────┐   ┌───────▼──────────────────────────────────┐
+│  adapters/   │   │              services/                   │
+│  (GDAL,      │   │  (lógica pura: classmap, histogram,       │
+│  rasterio,   │   │   preprocessing, spectral, training)      │
+│  legacy...)  │   └───────────────────────────────────────────┘
+└───────┬──────┘                    │ usa
+        │ implementa                │
+┌───────▼──────────────────────────▼──────────────────────────┐
+│                        ports/                               │
+│  (Protocols: RasterReader, RasterWriter, ROIClipper,        │
+│   PixelClassifier, ClassMap, Preprocessing, Exporters,      │
+│   Catalog)                                                  │
+└─────────────────────────────────────────────────────────────┘
+                           │ tipos de dominio
+┌──────────────────────────▼──────────────────────────────────┐
+│                      contracts/                             │
+│   core.py: ClassLabel, SceneId, RGB8, RunMeta               │
+│   geo.py:  GeoRaster, GeoProfile, CRSRef, Bounds            │
+│   products.py: BandSet, S2Asset                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Regla fundamental:** las flechas de dependencia solo apuntan hacia adentro. `services/` nunca importa de `adapters/`. `contracts/` no importa de ningún otro módulo del proyecto.
+
+---
+
+## Estructura del proyecto
+
+### Código fuente
+
+```
+src/satplatform/
+├── contracts/          # Tipos de dominio inmutables (Pydantic + dataclasses)
+│   ├── core.py         # ClassLabel, SceneId, RGB8, RunMeta, CalibrationSpec
+│   ├── geo.py          # GeoRaster, GeoProfile, CRSRef, Bounds, helpers
+│   └── products.py     # BandSet, S2Asset, Band
+├── ports/              # Interfaces (Protocol) de entrada/salida
+│   ├── raster_read.py  # RasterReaderPort
+│   ├── raster_write.py # RasterWriterPort
+│   ├── roi.py          # ROIClipperPort
+│   ├── preprocessing.py# PreprocessingPort, NormalizeSpec
+│   ├── pixel_class.py  # PixelClassifierPort
+│   ├── class_map.py    # ClassMapPort, ClassMap
+│   ├── exporters.py    # QuicklookExporterPort, ReportExporterPort
+│   └── catalog.py      # CatalogPort, ROIItem, MosaicItem, CatalogItem
+├── services/           # Lógica de dominio pura (sin I/O)
+│   ├── classmap_service.py       # pipeline LOAD→ALIGN→PRE→INFER→EXPORT
+│   ├── preprocessing_service.py  # normalize_single, normalize_many, rgb_to_hsl
+│   ├── histogram_norm_service.py # equalize, match, percent_clip
+│   ├── spectral_service.py       # NDVI, NDWI, NDBI, rgb_to_hsl
+│   └── training_service.py       # build_dataset, split, class_weights
+├── adapters/           # Implementaciones concretas
+│   ├── gdal_raster_reader.py     # fallback rasterio → GDAL → tifffile
+│   ├── gdal_raster_writer.py     # escritura GeoTIFF/COG
+│   ├── gdalwarp_cli.py           # recorte ROI vía gdalwarp
+│   ├── legacy_histnorm_adapter.py
+│   ├── legacy_pixelclass_adapter.py
+│   ├── legacy_classmap_adapter.py
+│   ├── legacy_fil2roi_adapter.py
+│   ├── csv_catalog.py
+│   └── csv_exporter.py
+├── composition/
+│   └── di.py           # Wiring: construye servicios inyectando adapters
+├── config.py           # Settings (Pydantic), validación de placeholders
+└── cli.py              # Entrypoint argparse
+```
+
+### Estructura de proyectos (layout físico)
+
+Cada proyecto de monitoreo sigue esta convención:
+
 ```
 Proyecto/
-├─ 00-Config/
-│ ├─ settings.yaml # configuración de paths, CRS, patrones
-│ ├─ class_labels.json # catálogo de clases (id, nombre, color RGB)
-│ └─ roi_master.geojson # AOIs maestras
-├─ 01-Raw/ # datos crudos (intocables)
-│ ├─ s2/ # productos SAFE de Sentinel-2
-│ │ └─ S2A_MSIL2A_20240123...SAFE/...
-│ ├─ DEM/ # modelos digitales de elevación
-│ └─ Ancillary/ # capas auxiliares
-├─ 02-Work/ # intermedios (recortes, stacks, features)
-│ ├─ ROI/
-│ ├─ STACK/
-│ ├─ HIST-NORM/
-│ ├─ FEATURES/
-│ └─ ...
-├─ 03-Products/ # productos finales
-│ ├─ CLASSMAP/
-│ ├─ CLASS-VIS/
-│ ├─ VIS/
-│ ├─ VIS-MOD/
-│ └─ REPORT/
-└─ 04-Analysis/ # notebooks, scripts, figuras
+├── 00-Config/
+│   ├── settings.yaml       # paths, CRS, patrones, band_order
+│   ├── class_labels.json   # catálogo de clases (id, nombre, color RGB, macro)
+│   └── roi_master.geojson  # AOIs maestras del proyecto
+├── 01-Raw/                 # Datos crudos — NO modificar
+│   ├── s2/                 # Productos SAFE de Sentinel-2
+│   │   └── S2A_MSIL2A_20240123T143731_N0510_R096_T19HFE_20240123T181234.SAFE/
+│   ├── DEM/                # Modelos digitales de elevación
+│   └── Ancillary/          # Capas auxiliares (límites, catastro)
+├── 02-Work/                # Artefactos intermedios (recalculables)
+│   ├── ROI/                # Bandas recortadas por ROI
+│   ├── STACK/              # Stacks multibanda por fecha
+│   ├── HIST-NORM/          # Bandas normalizadas
+│   ├── FEATURES/           # Features espectrales (HSL, índices)
+│   └── CLASSMAP-WORK/      # Classmaps intermedios
+├── 03-Products/            # Productos finales
+│   ├── CLASSMAP/           # GeoTIFF de clases por fecha
+│   ├── CLASS-VIS/          # Visualizaciones coloreadas
+│   ├── VIS/                # Quicklooks RGB
+│   └── REPORT/             # Reportes CSV/HTML por fecha
+└── 04-Analysis/            # Notebooks, scripts exploratorios, figuras
 ```
 
 ---
 
-## ⚙️ Configuración (Settings)
+## Instalación
+
+### Requisitos previos
+
+| Requisito | Versión mínima | Obligatorio |
+|---|---|---|
+| Python | 3.11 | Sí |
+| rasterio | 1.3 | Recomendado |
+| GDAL | 3.4 | Alternativa a rasterio |
+| gdalwarp | incluido en GDAL | Para recorte ROI |
+
+### Instalación rápida
+
+```bash
+# 1. Clonar el repositorio
+git clone https://github.com/faltamiranod93/sat_platform.git
+cd sat_platform
+
+# 2. Crear entorno virtual
+python -m venv .venv
+source .venv/bin/activate        # Linux/macOS
+# .venv\Scripts\activate         # Windows
+
+# 3. Instalar en modo editable con dependencias de desarrollo
+pip install -e ".[dev]"
+
+# 4. Verificar instalación
+python -m satplatform.cli --help
+```
+
+### Sin GDAL (modo degradado para desarrollo)
+
+Si no tienes GDAL instalado, el reader hace fallback automático a `tifffile` (sin georreferencia). Este modo solo sirve para correr tests unitarios — no usar en producción.
+
+```bash
+pip install rasterio numpy pydantic pydantic-settings Pillow PyYAML
+```
+
+### Verificación rápida
+
+```bash
+# Verifica que los contratos cargan sin error
+python -c "from satplatform.contracts.geo import GeoRaster, GeoProfile; print('OK')"
+
+# Verifica que los adapters detectan el backend disponible
+python -c "from satplatform.adapters.gdal_raster_reader import GdalRasterReader; print('OK')"
+```
+
+---
+
+## Dependencias
+
+| Paquete | Versión mínima | Uso |
+|---|---|---|
+| `pydantic` | >=2.0 | Contratos de dominio y validación |
+| `pydantic-settings` | >=2.0 | Carga de `Settings` desde YAML y variables de entorno |
+| `rasterio` | >=1.3 | I/O raster (preferido sobre GDAL directo) |
+| `numpy` | >=1.24 | Operaciones numéricas sobre arrays |
+| `Pillow` | >=10.0 | Exportación de quicklooks PNG |
+| `PyYAML` | >=6.0 | Lectura de `settings.yaml` |
+| `gdal` / `osgeo` | >=3.4 | Backend alternativo a rasterio |
+| `tifffile` | >=2023.0 | Fallback mínimo para tests sin GDAL |
+
+**Dependencias de desarrollo:**
+
+| Paquete | Uso |
+|---|---|
+| `pytest` | Suite de tests |
+| `pytest-cov` | Cobertura de tests |
+| `ruff` | Linting y formato |
+| `mypy` | Type checking estricto |
+| `pre-commit` | Hooks pre-commit |
+
+---
+
+## Configuración
 
 ### `00-Config/settings.yaml`
-Ejemplo:
 
 ```yaml
 project_root: "."
 crs_out: "EPSG:32719"
 
+# Directorios de trabajo (relativos a project_root)
 work_roi_dir: "02-Work/ROI"
 work_products_dir: "03-Products"
 report_dir: "03-Products/REPORT"
 
+# Herramientas externas (null = busca en PATH)
 gdalwarp_exe: null
 
-band_order: ["B02","B03","B04"]
+# Orden de bandas por defecto para stacks
+band_order: ["B02", "B03", "B04"]
+
+# Las clases pueden definirse aquí o en class_labels.json
 classes: []
 
+# Patrones de entrada — placeholders: {product}, {granule}, {tile}, {sensing}, {band}, {res}
 input_patterns:
-  safe_dir: "01-Raw/s2/{product}.SAFE"
+  safe_dir:    "01-Raw/s2/{product}.SAFE"
   granule_dir: "01-Raw/s2/{product}.SAFE/GRANULE/{granule}"
-  jp2_file: "01-Raw/s2/{product}.SAFE/GRANULE/{granule}/IMG_DATA/R{res}/T{tile}_{sensing}_{band}_{res}.jp2"
-  scl_file: "01-Raw/s2/{product}.SAFE/GRANULE/{granule}/IMG_DATA/R{res}/T{tile}_{sensing}_SCL_{res}.jp2"
-  mask_file: "01-Raw/s2/{product}.SAFE/GRANULE/{granule}/QI_DATA/MSK_QUALIT_{band}.jp2"
-  roi_file: "00-Config/roi_master.geojson"
+  jp2_file:    "01-Raw/s2/{product}.SAFE/GRANULE/{granule}/IMG_DATA/R{res}/T{tile}_{sensing}_{band}_{res}.jp2"
+  scl_file:    "01-Raw/s2/{product}.SAFE/GRANULE/{granule}/IMG_DATA/R{res}/T{tile}_{sensing}_SCL_{res}.jp2"
+  mask_file:   "01-Raw/s2/{product}.SAFE/GRANULE/{granule}/QI_DATA/MSK_QUALIT_{band}.jp2"
+  roi_file:    "00-Config/roi_master.geojson"
 
+# Patrones de salida — placeholder: {date} (YYYYMMDD)
 output_patterns:
-  stack: "02-Work/STACK/{date}/stack.tif"
-  hist_norm: "02-Work/HIST-NORM/{date}/hn.tif"
-  features_hsl: "02-Work/FEATURES/{date}/hsl.tif"
-  classmap: "03-Products/CLASSMAP/{date}/classmap.tif"
-👉 Placeholders permitidos:
-
-SAFE: {product}, {granule}, {tile}, {sensing}, {band}, {res}
-
-Work/Products: {date}
+  stack:         "02-Work/STACK/{date}/stack.tif"
+  hist_norm:     "02-Work/HIST-NORM/{date}/hn.tif"
+  features_hsl:  "02-Work/FEATURES/{date}/hsl.tif"
+  classmap:      "03-Products/CLASSMAP/{date}/classmap.tif"
 ```
 
-🧩 Arquitectura hexagonal
-Contracts: tipos de dominio (GeoRaster, BandSet, ClassLabel, S2Asset).
+### `00-Config/class_labels.json`
 
-Ports: interfaces (RasterReaderPort, ClassMapPort, PixelClassifierPort, etc.).
-
-Services: lógica pura (histogram normalization, preprocessing, spectral indices, training).
-
-Adapters: implementaciones concretas (GDAL, CSV, legacy).
-
-Composition: conecta puertos ↔ adapters en di.py.
-
-CLI: expone comandos reproducibles.
-
-🚀 CLI (Typer)
-Ejemplos:
-
-# Recortar ROI
-sat-platform roi clip --roi-id ROI1 --date 20240123
-
-# Construir stack RGB
-sat-platform stack build --date 20240123 --order B02,B03,B04
-
-# Normalización por histograma
-sat-platform hist-norm run --date 20240123
-
-# Features HSL
-sat-platform features hsl --date 20240123
-
-# Generar classmap
-sat-platform classmap run --date 20240123 --model baseline
-
-# Exportar quicklook
-sat-platform export quicklook --date 20240123
-Todos los artefactos quedan en 02-Work/ o 03-Products/ siguiendo los patrones de settings.yaml.
-
-🧪 Tests
-La suite está organizada en 3 niveles:
-
-Unit (tests/unit/): dominio puro, sin I/O. → debe correr en cualquier entorno.
-
-Integration (tests/integration/): adapters reales (GDAL, legacy). → requiere GDAL instalado.
-
-E2E (tests/e2e/): ejecución del CLI con datos sintéticos.
-
-Ejemplo:
-
-```
-pytest tests/unit -q          # solo dominio
-pytest tests/integration -m gdal   # solo si tienes GDAL
-pytest tests/e2e -q
+```json
+[
+  {"id": 1, "name": "Agua",    "macro": "Agua",    "color": {"r": 31,  "g": 119, "b": 180}},
+  {"id": 2, "name": "Relave",  "macro": "Relave",  "color": {"r": 214, "g": 39,  "b": 40}},
+  {"id": 3, "name": "Terreno", "macro": "Terreno", "color": {"r": 152, "g": 223, "b": 138}}
+]
 ```
 
-🧹 Calidad de código
-Linters: ruff y mypy --strict.
+### Variables de entorno
 
-Pre-commit hooks: .pre-commit-config.yaml en la raíz asegura que no se commitea código roto.
+El proyecto soporta configuración parcial vía variables de entorno con prefijo `SAT_`:
 
-Instalación:
+```bash
+export SAT_PROJECT_ROOT=/ruta/al/proyecto
+export SAT_CRS_OUT=EPSG:32719
+export SAT_GDALWARP_EXE=/usr/bin/gdalwarp
+```
+
+---
+
+## Flujo de trabajo completo
+
+El pipeline transforma bandas crudas en un classmap georreferenciado siguiendo estos pasos:
 
 ```
-pip install pre-commit ruff mypy
+Bandas S2 (JP2/TIF)
+       │
+       ▼
+  [1] LOAD      — lee cada banda con GdalRasterReader
+       │
+       ▼
+  [2] CLIP      — recorta a ROI con GdalWarpClipper (opcional)
+       │
+       ▼
+  [3] ALIGN     — valida compatibilidad de grid, CRS y dimensiones
+       │
+       ▼
+  [4] NORMALIZE — histograma percent-clip 2-98 (opcional, --normalize)
+       │
+       ▼
+  [5] BANDSET   — agrupa bandas en BandSet con resolución verificada
+       │
+       ▼
+  [6] CLASSIFY  — LegacyPixelClassifier (reglas) o modelo externo
+       │
+       ▼
+  [7] CLASSMAP  — cuenta píxeles por clase, construye paleta RGB
+       │
+       ▼
+  [8] EXPORT    — GeoTIFF uint8 + quicklook PNG (opcional)
+```
+
+### Ejemplo completo: bandas crudas → classmap
+
+```bash
+# Pipeline completo con recorte ROI, normalización y quicklook
+python -m satplatform.cli classify \
+  --date 20240123 \
+  -b B03=./01-Raw/s2/T19HFE_B03_10m.tif \
+  -b B04=./01-Raw/s2/T19HFE_B04_10m.tif \
+  -b B08=./01-Raw/s2/T19HFE_B08_10m.tif \
+  -b B11=./01-Raw/s2/T19HFE_B11_20m.tif \
+  --roi   ./00-Config/roi_master.geojson \
+  --normalize \
+  --png \
+  --out   ./03-Products/CLASSMAP/20240123/classmap.tif
+```
+
+Output esperado:
+
+```
+[INFO] Leyendo 4 bandas...
+[INFO] Recortando a ROI...
+[INFO] Normalizando (percent-clip 2-98)...
+[INFO] Clasificando 1.152.000 píxeles...
+[OK]   classmap.tif → 1200x960 px, uint8, EPSG:32719
+[OK]   classmap.png → quicklook RGB exportado
+
+Distribución de clases:
+  Agua    (id=1):  12.3%  (141,696 px)
+  Relave  (id=2):  34.1%  (392,832 px)
+  Terreno (id=3):  53.6%  (617,472 px)
+```
+
+### Pipeline modular paso a paso
+
+```bash
+# Paso 1: Stack multibanda (inspección y depuración)
+python -m satplatform.cli stack \
+  --date 20240123 \
+  -b B02=./B02.tif -b B03=./B03.tif -b B04=./B04.tif \
+  --order B04 B03 B02
+
+# Paso 2: Normalización por histograma
+python -m satplatform.cli hist-norm \
+  --date 20240123 \
+  -b B03=./B03.tif -b B04=./B04.tif -b B08=./B08.tif \
+  --out ./02-Work/HIST-NORM/20240123/hn.tif
+
+# Paso 3: Clasificación sobre bandas normalizadas
+python -m satplatform.cli classify \
+  --date 20240123 \
+  -b B03=./02-Work/HIST-NORM/20240123/B03_norm.tif \
+  -b B04=./02-Work/HIST-NORM/20240123/B04_norm.tif \
+  -b B08=./02-Work/HIST-NORM/20240123/B08_norm.tif \
+  -b B11=./02-Work/HIST-NORM/20240123/B11_norm.tif \
+  --out ./03-Products/CLASSMAP/20240123/classmap.tif \
+  --png
+```
+
+---
+
+## CLI — referencia de comandos
+
+### `classify` — pipeline completo a classmap
+
+```
+python -m satplatform.cli classify [opciones]
+
+Opciones requeridas:
+  --date YYYYMMDD       Fecha de la imagen (usada en rutas de salida)
+  -b B03=./path.tif     Par banda=ruta (repetible; mínimo B03, B04, B08)
+
+Opciones opcionales:
+  --roi   path.geojson  Región de interés para recorte (Feature/FeatureCollection/Geometry)
+  --normalize           Aplica normalización percent-clip antes de clasificar
+  --out   path.tif      Ruta de salida (si no, usa output_patterns['classmap'] de Settings)
+  --png                 Exporta quicklook PNG junto al GeoTIFF
+  --gdalwarp path       Ruta a gdalwarp si no está en PATH
+  --root  path          Sobreescribe project_root de Settings
+```
+
+### `stack` — apila bandas en un GeoTIFF multibanda
+
+```
+python -m satplatform.cli stack --date YYYYMMDD -b BAND=path [--order B04 B03 B02]
+```
+
+### `hist-norm` — normaliza bandas por histograma
+
+```
+python -m satplatform.cli hist-norm --date YYYYMMDD
+  [-b BAND=path ...]    Múltiples bandas: normaliza y stackea
+  [-i path]             Una sola imagen: normaliza directamente
+  [--out path]          Ruta de salida explícita
+  [--order B04 B03 B02] Orden de bandas en el stack
+```
+
+---
+
+## Índices espectrales disponibles
+
+Calculados por `SpectralService.compute_indices()` vía `BandSet`.
+
+### Disponibles hoy
+
+| Índice | Fórmula | Bandas S2 | Uso en tranques |
+|---|---|---|---|
+| NDVI | (B08 - B04) / (B08 + B04) | B04, B08 | Cobertura vegetal, revegetación de taludes |
+| NDWI | (B03 - B08) / (B03 + B08) | B03, B08 | Agua superficial, lixiviados |
+| NDBI | (B11 - B08) / (B11 + B08) | B08, B11 | Superficies áridas, techos, depósitos |
+
+### Planificados (Fase 5)
+
+| Índice | Fórmula | Utilidad |
+|---|---|---|
+| BSI | ((B11+B04)-(B08+B02)) / ((B11+B04)+(B08+B02)) | Suelos desnudos y depósitos minerales — el más relevante para relaves |
+| MNDWI | (B03 - B11) / (B03 + B11) | Mejor discriminación agua/suelo que NDWI clásico |
+| SAVI | ((B08-B04)/(B08+B04+L)) * (1+L) donde L=0.5 | NDVI ajustado por suelo, útil en zonas áridas |
+| EVI | 2.5*(B08-B04)/(B08+6*B04-7.5*B02+1) | Reducción de saturación atmosférica |
+
+Para calcular índices desde Python:
+
+```python
+from satplatform.services.spectral_service import SpectralService
+from satplatform.contracts.products import BandSet
+
+svc = SpectralService()
+
+# compute_indices devuelve GeoRaster multibanda (una banda por índice)
+indices = svc.compute_indices(bandset, ["NDVI", "NDWI", "NDBI"])
+# indices.data.shape → (3, H, W) — orden: NDVI, NDWI, NDBI
+```
+
+---
+
+## Clases de cobertura
+
+Las clases disponibles en el clasificador legacy corresponden a las tres macroclases del dominio de tranques:
+
+| ID | Nombre | MacroClass | Color por defecto | Descripción |
+|---|---|---|---|---|
+| 1 | Agua | AGUA | Azul (#1F77B4) | Agua superficial, piscinas de decantación, lixiviados |
+| 2 | Relave | RELAVE | Rojo (#D62728) | Material depositado activo o seco |
+| 3 | Terreno | TERRENO | Verde (#98DF8A) | Suelo natural, vegetación, infraestructura circundante |
+
+Las clases se definen en `00-Config/class_labels.json` y son completamente configurables. Para agregar subclases (ej. "Relave húmedo" / "Relave seco"):
+
+```json
+[
+  {"id": 1, "name": "Agua",          "macro": "Agua",    "color": {"r": 31,  "g": 119, "b": 180}},
+  {"id": 2, "name": "Relave húmedo", "macro": "Relave",  "color": {"r": 214, "g": 39,  "b": 40}},
+  {"id": 3, "name": "Relave seco",   "macro": "Relave",  "color": {"r": 255, "g": 127, "b": 14}},
+  {"id": 4, "name": "Terreno",       "macro": "Terreno", "color": {"r": 152, "g": 223, "b": 138}}
+]
+```
+
+---
+
+## Extender la plataforma
+
+La arquitectura hexagonal garantiza que agregar un nuevo clasificador, lector o exportador no requiere modificar el dominio ni los services existentes.
+
+### Agregar un clasificador basado en Random Forest
+
+```python
+# adapters/sklearn_pixel_classifier.py
+from __future__ import annotations
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional, Sequence
+
+import joblib
+import numpy as np
+
+from ..contracts.core import ClassLabel
+from ..contracts.geo import GeoRaster, GeoProfile
+from ..contracts.products import BandSet
+
+@dataclass(frozen=True)
+class SKLearnPixelClassifier:
+    """Adapter que implementa PixelClassifierPort con sklearn."""
+    
+    model_path: Path
+    classes_def: Sequence[ClassLabel]
+    band_order: tuple[str, ...]  # orden esperado por el modelo
+
+    def name(self) -> str:
+        return f"sklearn-{self.model_path.stem}"
+
+    def classes(self) -> Sequence[ClassLabel]:
+        return self.classes_def
+
+    def predict(self, bands: BandSet, *, calibration_id: Optional[str] = None) -> GeoRaster:
+        model = joblib.load(self.model_path)
+        
+        # Construir matriz de features (N, F) desde BandSet
+        arrays = [bands.bands[b].data.reshape(-1) for b in self.band_order]
+        X = np.stack(arrays, axis=1).astype(np.float32)
+        
+        # Predecir
+        y_pred = model.predict(X).astype(np.uint8)
+        
+        base = bands.bands[self.band_order[0]]
+        h, w = base.data.shape
+        profile = GeoProfile(
+            count=1, dtype="uint8",
+            width=w, height=h,
+            transform=base.profile.transform,
+            crs=base.profile.crs,
+            nodata=0,
+        )
+        return GeoRaster(data=y_pred.reshape(h, w), profile=profile)
+```
+
+Conectarlo en `composition/di.py`:
+
+```python
+from satplatform.adapters.sklearn_pixel_classifier import SKLearnPixelClassifier
+from satplatform.services.classmap_service import ClassMapService
+
+def build_rf_classmap_service(settings: Settings) -> ClassMapService:
+    reader  = GdalRasterReader()
+    writer  = GdalRasterWriter()
+    clipper = GdalWarpClipper(raster_reader=reader, raster_writer=writer)
+    clf     = SKLearnPixelClassifier(
+        model_path=Path("models/rf_v2.pkl"),
+        classes_def=settings.classes,
+        band_order=("B03", "B04", "B08", "B11"),
+    )
+    cmapper = LegacyClassMapAdapter()
+    return ClassMapService(
+        reader=reader, writer=writer, clipper=clipper,
+        classifier=clf, cmapper=cmapper,
+    )
+```
+
+El CLI y los tests no necesitan ningún cambio.
+
+### Agregar un nuevo índice espectral
+
+En `services/spectral_service.py`, agrega la entrada al diccionario `required`:
+
+```python
+required: dict[str, tuple[S2BandName, S2BandName]] = {
+    "NDVI":  ("B08", "B04"),
+    "NDBI":  ("B11", "B08"),
+    "NDWI":  ("B03", "B08"),
+    "BSI":   ("B11", "B04"),   # ← nuevo
+    "MNDWI": ("B03", "B11"),   # ← nuevo
+}
+```
+
+Para índices con más de dos bandas o fórmulas no normalizadas, agrega un método específico siguiendo el mismo patrón de `nd_index`.
+
+### Agregar un nuevo exportador de reportes
+
+Implementa `ReportExporterPort` en `adapters/`:
+
+```python
+# adapters/jinja_report_exporter.py
+from jinja2 import Environment, FileSystemLoader
+
+class JinjaReportExporter:
+    """Genera reportes HTML desde plantillas Jinja2."""
+    
+    def render(self, template_id: str, context: dict, out_uri: str) -> str:
+        env = Environment(loader=FileSystemLoader("templates/"))
+        tmpl = env.get_template(f"{template_id}.html.j2")
+        Path(out_uri).write_text(tmpl.render(**context), encoding="utf-8")
+        return out_uri
+```
+
+---
+
+## Tests
+
+La suite está organizada en tres niveles con dependencias progresivas.
+
+### Unit — sin datos reales, sin GDAL
+
+Prueban contratos y servicios con arrays numpy sintéticos. Deben correr en cualquier entorno.
+
+```bash
+pytest tests/unit/ -q
+
+# Con cobertura
+pytest tests/unit/ --cov=satplatform.contracts --cov=satplatform.ports --cov-report=term-missing
+```
+
+Qué cubren: validación de `BandSet`, `GeoProfile`, `validate_profile_compat`, `NormalizeSpec`, `SceneId`, `CRSRef.equals()`, `_iter_placeholders` en config, lógica numérica de `HistogramNormService`.
+
+### Integration — requiere rasterio o GDAL
+
+Prueban adapters con archivos reales pequeños (5×5 px).
+
+```bash
+pytest tests/integration/ -m gdal -q
+```
+
+Qué cubren: `GdalRasterReader` con TIFFs reales, `GdalWarpClipper` con GeoJSON sintético, `LegacyHistNormAdapter.normalize()`.
+
+### E2E — CLI con estructura de proyecto completa
+
+```bash
+pytest tests/e2e/ -q --project-root /path/to/test_project
+```
+
+Qué cubren: `cli.py classify` end-to-end con bandas sintéticas de 100×100 px, verificación de artefactos de salida.
+
+### Cobertura actual y objetivos
+
+| Módulo | Cobertura actual | Objetivo |
+|---|---|---|
+| `contracts/` | ⬜ Sin medir | ≥ 95% |
+| `ports/` | ⬜ Sin medir | ≥ 90% |
+| `services/` | ⬜ Sin medir | ≥ 85% |
+| `adapters/` | ⬜ Sin medir | ≥ 70% |
+
+### Calidad de código
+
+```bash
+# Linting
+ruff check src/
+
+# Type checking (estricto en contratos y ports)
+mypy --strict src/satplatform/contracts/ src/satplatform/ports/
+mypy src/satplatform/services/ src/satplatform/adapters/
+
+# Formato
+ruff format src/
+```
+
+---
+
+## Decisiones de diseño
+
+### ¿Por qué `argparse` y no Typer?
+
+`cli.py` usa `argparse` estándar por portabilidad sin dependencias adicionales. Typer está en el roadmap (Fase 6) una vez que el pipeline esté estabilizado y los comandos no cambien de firma. Migrar de `argparse` a Typer es un refactor mecánico que no afecta la lógica de dominio.
+
+### ¿Por qué `frozen=True` en todos los DTOs?
+
+Los datos geoespaciales deben ser inmutables una vez construidos para garantizar reproducibilidad. Un `GeoRaster` que se modifica en un paso intermedio del pipeline invalida el linaje de datos sin generar error explícito. `frozen=True` convierte ese error silencioso en una excepción inmediata.
+
+### ¿Por qué `validate_profile_compat` exige mismo dtype?
+
+Previene mezclas silenciosas de `uint16` (Sentinel-2 raw) y `float32` (normalizado) en un `BandSet`. Si necesitas mezclar bandas de distintos dtypes, normaliza explícitamente todas antes de construir el `BandSet`. El pipeline correcto es: load → normalize all → BandSet → classify.
+
+### ¿Por qué tres niveles de fallback en el reader?
+
+Para que los tests unitarios corran en CI sin GDAL instalado. `tifffile` permite testear la lógica de dominio con arrays numpy puros sin dependencia de librerías geoespaciales. En producción siempre se usa rasterio o GDAL.
+
+### ¿Por qué los adapters legacy existen?
+
+Los adapters `legacy_*` encapsulan scripts pre-arquitectura que ya funcionaban en producción. Permiten que el pipeline corra mientras se desarrollan implementaciones más sólidas. Su nombre `legacy` es intencional: señalan que deben ser reemplazados, no que son erróneos.
+
+### ¿Por qué `CRSRef` sin GDAL?
+
+`contracts/geo.py` no puede importar GDAL porque los contratos deben ser puro Python para los tests unitarios. `CRSRef` hace comparación determinista mediante EPSG (si está disponible) o WKT normalizado (si no). La conversión a objetos GDAL/rasterio ocurre en los adapters, que sí pueden importar GDAL.
+
+### ¿Por qué `composition/di.py` y no un framework DI?
+
+Un framework de inyección de dependencias (FastAPI, inject, punq) agrega complejidad sin beneficio real para un pipeline de procesamiento de datos que se configura una vez por ejecución. `di.py` es código Python plano que se lee linealmente — más fácil de depurar y modificar que un contenedor DI automático.
+
+---
+
+## Limitaciones conocidas
+
+### Técnicas
+
+- **Sin reproyección automática:** todas las bandas deben estar en el mismo CRS y resolución antes de entrar al pipeline. Usa `gdalwarp` manualmente si alguna banda tiene CRS o pixel size distinto. El adapter `GdalWarpClipper` reprovecta al CRS del proyecto al hacer clip, pero no entre bandas.
+
+- **Sin descarga de imágenes:** el pipeline asume que los JP2/TIF ya están en `01-Raw/s2/`. No integra con la API de Copernicus ni con STAC. La descarga es responsabilidad del operador.
+
+- **Clasificador legacy = reglas simples:** el clasificador actual usa umbrales fijos basados en reflectancia (B03, B04, B08, B11). Para producción sobre tranques específicos se requiere un modelo entrenado con datos de campo validados. Los umbrales no son transferibles entre proyectos sin ajuste.
+
+- **Sin series temporales:** cada ejecución procesa una fecha de forma independiente. No hay detección de cambio entre fechas, ni análisis de tendencias. Esta capacidad está planificada para Fase 7.
+
+- **Sin procesamiento multi-proyecto en paralelo:** el pipeline procesa un proyecto a la vez. Múltiples tranques requieren múltiples ejecuciones secuenciales o un orquestador externo (pendiente Fase 8).
+
+- **Sin cobertura de nubes automática:** el pipeline no evalúa el SCL (Scene Classification Layer) de Sentinel-2. Si la imagen tiene cobertura de nubes, el classmap tendrá errores silenciosos en las zonas cubiertas. Verificar manualmente antes de procesar.
+
+### De datos
+
+- **Sentinel-2 L2A únicamente:** el clasificador está calibrado para reflectancias de superficie (L2A). Imágenes L1C (TOA) producirán resultados incorrectos.
+
+- **Resolución mínima 10m:** el `BandSet` valida que `resolution_m` coincida con el tamaño de pixel real. Bandas a 60m (B01, B09) no son compatibles con bandas a 10m en el mismo BandSet sin resampling previo.
+
+---
+
+## Contribuir
+
+### Reglas del dominio (no negociables)
+
+1. `services/` **nunca** importa de `adapters/` ni de `config.py`
+2. `contracts/` **no tiene** dependencias externas excepto `pydantic`, `numpy` y stdlib
+3. Todo nuevo service debe tener tests unitarios sin I/O antes de merge
+4. Los ports **solo** definen `Protocol` — sin lógica de negocio
+5. Los DTOs de entrada terminan en `*Spec`, los de salida en `*Result`
+6. `frozen=True` en todos los `@dataclass` y modelos Pydantic de dominio
+
+### Proceso de contribución
+
+```bash
+# 1. Fork y clonar
+git clone https://github.com/TU_USUARIO/sat_platform.git
+
+# 2. Crear rama
+git checkout -b feature/sklearn-classifier
+
+# 3. Instalar hooks pre-commit
+pip install pre-commit
 pre-commit install
+
+# 4. Desarrollar con tests
+pytest tests/unit/ -q              # debe pasar 100%
+ruff check src/
+mypy --strict src/satplatform/contracts/ src/satplatform/ports/
+
+# 5. PR con descripción que incluya:
+#    - qué problema resuelve
+#    - qué tests se agregaron
+#    - si modifica el pipeline, el flujo antes y después
 ```
-📌 Roadmap / fases
-Fase 0: higiene → ruff + mypy + pytest unit 100% verde.
 
-Fase 1: settings.yaml válido y placeholders cerrados.
+### Convenciones de nombre
 
-Fase 2: contracts inmutables (GeoRaster, BandSet).
+| Tipo | Convención | Ejemplo |
+|---|---|---|
+| Adapter | `<Backend><Rol>` | `GdalRasterReader`, `SKLearnPixelClassifier` |
+| Service | `<Dominio>Service` | `ClassMapService`, `HistogramNormService` |
+| Port | `<Rol>Port` | `RasterReaderPort`, `PixelClassifierPort` |
+| DTO entrada | `<Acción>Spec` | `NormalizeSpec`, `ClassMapSpec` |
+| DTO salida | `<Acción>Result` | `ClassMapResult`, `NormalizeManyResult` |
+| Test unit | `test_<módulo>.py` | `test_geo.py`, `test_classmap_service.py` |
 
-Fase 3: cierre de firmas de ports.
+### Checklist antes de PR
 
-Fase 4: services alineados con tests (dominio puro).
+- [ ] Tests unitarios nuevos para la lógica agregada
+- [ ] `ruff check` sin errores
+- [ ] `mypy` sin errores en `contracts/` y `ports/`
+- [ ] Si cambia el CLI: actualizar sección de referencia en este README
+- [ ] Si agrega un índice espectral: actualizar tabla de índices
+- [ ] Si agrega un nuevo adapter: actualizar tabla de estado del proyecto
 
-Fase 5: adapters mínimos (GDAL reader/writer).
+---
 
-Fase 6: CLI reproducible paso a paso (ROI → stack → hist-norm → features → classmap → export).
+## Entorno reproducible
 
-Fase 7: exporters/reportes.
+GDAL tiene dependencias de sistema difíciles de instalar consistentemente entre plataformas. Se recomiendan las siguientes opciones.
 
-Fase 8: CI/CD (unit siempre; integración opcional).
+### Opción 1: conda (recomendado para usuarios)
 
-📖 Referencias
-ESA Sentinel-2 SAFE format specification
+```bash
+conda create -n satplatform python=3.11 gdal rasterio numpy
+conda activate satplatform
+cd sat_platform
+pip install -e ".[dev]"
+python -m satplatform.cli --help
+```
 
-GDAL & rasterio for geospatial I/O
+### Opción 2: pip + sistema (Linux/macOS)
 
-Arquitectura hexagonal (ports & adapters) aplicada a procesamiento satelital
+```bash
+# Ubuntu/Debian
+sudo apt-get install gdal-bin libgdal-dev python3-gdal
 
-📝 Licencia
-MIT (libre uso y modificación, con atribución).
+# macOS con Homebrew
+brew install gdal
+
+pip install GDAL==$(gdal-config --version) rasterio
+pip install -e ".[dev]"
+```
+
+### Opción 3: Docker (próximamente)
+
+```bash
+# Pendiente — ver issue #XX
+# docker build -t satplatform .
+# docker run -v $(pwd)/Proyecto:/project satplatform classify \
+#   --date 20240123 -b B03=/project/01-Raw/s2/B03.tif ...
+```
+
+El `Dockerfile` está planificado para Fase 8 junto con el soporte de CI/CD.
+
+---
+
+## Roadmap por fases
+
+| Fase | Descripción | Estado |
+|---|---|---|
+| 0 | Higiene — ruff + mypy + estructura base | ✅ Completa |
+| 1 | `settings.yaml` válido, placeholders cerrados | ✅ Completa |
+| 2 | Contracts inmutables (`GeoRaster`, `BandSet`, `ClassLabel`) | ✅ Completa |
+| 3 | Ports cerrados y documentados | ✅ Completa |
+| 4 | Services alineados con tests unitarios (dominio puro) | 🔴 En progreso — bugs activos |
+| 5 | Adapters mínimos (GDAL reader/writer/clipper) | 🟡 Parcial — legacy con bugs |
+| 6 | CLI reproducible paso a paso (classify funcional) | 🟡 Parcial — argparse operativo |
+| 7 | Exporters: reportes CSV, quicklooks PNG con metadatos | ⬜ Pendiente |
+| 8 | CI/CD: tests automáticos + Docker + GitHub Actions | ⬜ Pendiente |
+
+### Backlog posterior al Fase 8
+
+- Detección de cambios entre fechas (diferencia de classmaps)
+- Índices BSI, MNDWI, SAVI, EVI
+- Integración con catálogo STAC de Copernicus para descarga automática
+- Soporte multi-AOI y procesamiento por lotes
+- Clasificador sklearn con entrenamiento desde datos de campo
+- Validación con ground truth (métricas OA, Kappa, F1 por clase)
+- Scheduler para ejecución automática al publicarse nuevas imágenes
+
+---
+
+## Referencias
+
+- [ESA Sentinel-2 SAFE format specification](https://sentinel.esa.int/web/sentinel/user-guides/sentinel-2-msi/data-formats)
+- [Sentinel-2 Level-2A Algorithm Theoretical Basis Document](https://sentinel.esa.int/documents/247904/685211/Sentinel-2_Level-2A_ATBD)
+- [rasterio — Geospatial raster I/O for Python](https://rasterio.readthedocs.io/)
+- [GDAL — Geospatial Data Abstraction Library](https://gdal.org/)
+- [Pydantic v2 — Data validation](https://docs.pydantic.dev/latest/)
+- Arquitectura hexagonal: Alistair Cockburn, "Hexagonal Architecture", 2005
+- [MGRS — Military Grid Reference System](https://earth-info.nga.mil/index.php?dir=coordsys&action=mgrs)
+- Tucker, C.J. (1979). "Red and photographic infrared linear combinations for monitoring vegetation" — origen de NDVI
+- Zha, Y., Gao, J., Ni, S. (2003). "Use of normalized difference built-up index in automatically mapping urban areas" — origen de NDBI
+
+---
+
+## Licencia
+
+MIT — libre uso y modificación con atribución.
+
+```
+Copyright (c) 2025 faltamiranod93
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+```
