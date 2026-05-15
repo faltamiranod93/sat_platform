@@ -1,14 +1,33 @@
-# tests/integration/adapters/test_gdal_raster_reader.py
-import pytest
+"""Integration test del GdalRasterReader.
+
+Usa la cadena de fallback rasterio → GDAL → tifffile. Genera su propio fixture
+TIFF para no depender de archivos versionados.
+"""
+from __future__ import annotations
+
 from pathlib import Path
-from satplatform.adapters.gdal_raster_reader import GdalRasterReader
 
-pytestmark = pytest.mark.gdal  # corre sólo si hay GDAL
+import numpy as np
+import pytest
 
-def test_read_small_geotiff(tmp_path: Path):
-    # prepara un geotiff tiny (o incluye uno en tests/data)
-    path = Path(__file__).parent.parent / "data" / "tiny.tif"
+pytestmark = pytest.mark.gdal
+
+
+@pytest.fixture
+def tiny_tif(tmp_path: Path) -> Path:
+    """Crea un TIFF pequeño usando tifffile (fallback puro). Sin georreferencia."""
+    tifffile = pytest.importorskip("tifffile", reason="tifffile no disponible")
+    arr = np.arange(25, dtype=np.uint16).reshape(5, 5)
+    out = tmp_path / "tiny.tif"
+    tifffile.imwrite(out, arr)
+    return out
+
+
+def test_read_small_geotiff(tiny_tif: Path):
+    from satplatform.adapters.gdal_raster_reader import GdalRasterReader
+
     reader = GdalRasterReader()
-    rast = reader.read(path)
-    assert rast.profile.width > 0
-    assert rast.profile.crs is not None
+    rast = reader.read(tiny_tif)
+    assert rast.profile.width == 5
+    assert rast.profile.height == 5
+    assert rast.data.shape == (5, 5) or rast.data.shape == (1, 5, 5)

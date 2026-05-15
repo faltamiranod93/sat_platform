@@ -31,23 +31,22 @@ class LegacyPixelClassifier(PixelClassifierPort):
         return self.classes_def
 
     def predict(self, bands: BandSet, *, calibration_id: Optional[str] = None) -> GeoRaster:
-        need = []
-        # usa bandas comunes
-        for b in ("B03", "B04", "B08", "B11"):
-            if bands.has(b):
-                need.append(b)
+        available = bands.names()
+        required_candidates = ("B03", "B04", "B08", "B11")
+        need = [b for b in required_candidates if b in available]
         if len(need) < 3:
-            raise ValueError("Se requieren al menos 3 bandas entre B03,B04,B08,B11")
+            raise ValueError(
+                f"Se requieren al menos 3 bandas entre {required_candidates}; presentes: {sorted(available)}"
+            )
 
-        # Referencia de tamaño y perfil
         base = bands.bands[need[0]]
         h, w = base.data.shape
-        out = np.zeros((h, w), dtype=np.uint8)
+        zeros = np.zeros((h, w), dtype=np.float32)
 
-        b03 = bands.bands.get("B03").data if bands.has("B03") else np.zeros_like(out)
-        b04 = bands.bands.get("B04").data if bands.has("B04") else np.zeros_like(out)
-        b08 = bands.bands.get("B08").data if bands.has("B08") else np.zeros_like(out)
-        b11 = bands.bands.get("B11").data if bands.has("B11") else np.zeros_like(out)
+        b03 = bands.bands["B03"].data if "B03" in available else zeros
+        b04 = bands.bands["B04"].data if "B04" in available else zeros
+        b08 = bands.bands["B08"].data if "B08" in available else zeros
+        b11 = bands.bands["B11"].data if "B11" in available else zeros
 
         # Normaliza 0..1 si vienen en reflectancias 0..10000 típicas
         def _norm(x):
@@ -57,15 +56,15 @@ class LegacyPixelClassifier(PixelClassifierPort):
 
         n3, n4, n8, n11 = _norm(b03), _norm(b04), _norm(b08), _norm(b11)
 
-        # Heurísticas simples
         is_water = (n8 < 0.15) & (n3 < 0.15)
         is_tail  = (n4 > 0.5) & (n11 > 0.4)
-        # Terreno = resto
+
         class_by_name = {c.name.lower(): c.id for c in self.classes_def}
         agua_id = class_by_name.get("agua", 1)
         relave_id = class_by_name.get("relave", 2)
         terreno_id = class_by_name.get("terreno", 3)
 
+        out = np.zeros((h, w), dtype=np.uint8)
         out[is_water] = agua_id
         out[is_tail] = relave_id
         out[(~is_water) & (~is_tail)] = terreno_id

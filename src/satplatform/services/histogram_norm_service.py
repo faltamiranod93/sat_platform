@@ -17,6 +17,7 @@ import numpy as np
 
 from ..contracts.core import S2BandName
 from ..contracts.geo import GeoRaster, GeoProfile, CRSRef, validate_profile_compat
+from ..contracts.products import BandSet
 from ..ports.preprocessing import NormalizeSpec
 from ..ports.raster_read import RasterReaderPort
 from ..ports.raster_write import RasterWriterPort
@@ -375,7 +376,7 @@ class HistogramNormService:
         np.clip(out, 0.0, 1.0, out=out)
         return out
 
-    def normalize_bandset(self, bandset: "BandSet", order: Sequence[S2BandName]) -> "BandSet":
+    def normalize_bandset(self, bandset: BandSet, order: Sequence[S2BandName]) -> BandSet:
         """
         Normaliza cada banda de un BandSet a [0,1] usando percentiles (p2/p98).
         - Devuelve un BandSet nuevo con float32 y NaN en inválidos (no se escribe).
@@ -410,9 +411,7 @@ class HistogramNormService:
 
             out_map[name] = GeoRaster(out_arr, _profile_float32_from(ras.profile, count=1))
 
-        # construye nuevo BandSet inmutable con mismas props geométricas
         return BandSet(resolution_m=bandset.resolution_m, bands=out_map)
-        #raise NotImplementedError
 
     # -------- orden estable --------
     @staticmethod

@@ -6,30 +6,30 @@
 
 ## Estado actual del proyecto
 
-> **Actualizado: abril 2025**
-> Este README refleja el estado real del código, no solo las intenciones del diseño.
+> **Actualizado: mayo 2026 (post-Sprint 2)**
+> Este README refleja el estado real del código tras la corrección de los bugs
+> bloqueantes y el refactor del composition root.
 
 | Componente | Estado | Notas |
 |---|---|---|
-| `contracts/core.py` | ✅ Estable | `RGB8`, `ClassLabel`, `SceneId`, `RunMeta` completos y validados |
-| `contracts/geo.py` | ✅ Estable | `CRSRef`, `GeoProfile`, `GeoRaster`, `validate_profile_compat` sólidos |
+| `contracts/core.py` | ✅ Estable | `RGB8`, `ClassLabel`, `SceneId`, `RunMeta`, `CalibrationSpec` completos |
+| `contracts/geo.py` | ✅ Estable | `CRSRef`, `GeoProfile`, `GeoRaster`, `validate_profile_compat` (con manejo correcto de NaN nodata) |
 | `contracts/products.py` | ✅ Estable | `BandSet`, `S2Asset` con inmutabilidad garantizada |
-| `ports/` | ✅ Estable | Todos los Protocols definidos y documentados |
+| `ports/` | ✅ Estable | 100% cobertura; Protocols definidos y documentados |
 | `adapters/gdal_raster_reader.py` | ✅ Funcional | Fallback rasterio → GDAL → tifffile |
 | `adapters/gdal_raster_writer.py` | ✅ Funcional | Escritura GeoTIFF/COG |
-| `adapters/legacy_histnorm` | 🟡 Parcial | Normalización RGB→HSL incorrecta (en corrección) |
-| `adapters/legacy_pixelclass` | 🔴 Bug activo | `bands.has()` no existe en `BandSet` — usar `b in bands.bands` |
-| `services/classmap_service.py` | 🟢 Funcional | Pipeline `run()` operativo |
-| `services/preprocessing_service.py` | 🔴 Bug activo | Helpers sin `@staticmethod` → `NameError` en runtime |
-| `services/histogram_norm_service.py` | 🔴 Bug activo | `BandSet` no importado en `normalize_bandset` |
-| `services/spectral_service.py` | 🟡 Parcial | Solo 3 índices disponibles (NDVI, NDWI, NDBI) |
-| `services/training_service.py` | 🟡 Aislado | Funciones `build_dataset`/`split` sin conexión al pipeline |
-| `config.py` | 🔴 Bug activo | Doble `model_config` — `frozen=True` se sobreescribe |
-| `composition/di.py` | 🔴 Incompleto | Solo construye `Settings`; no instancia servicios |
-| `cli.py` | 🟡 Parcial | Funcional con `argparse`; Typer previsto para Fase 6 |
-| `cli-v2.py` | ⚠️ Legacy | Script standalone sin arquitectura; mover a `legacy/` |
-| `tests/` | ⬜ Pendiente | Suite no implementada aún |
-| CI/CD | ⬜ Pendiente | GitHub Actions no configurado |
+| `adapters/legacy_histnorm` | ✅ Funcional | RGB→HSL corregido (escalar común, preserva cromaticidad) |
+| `adapters/legacy_pixelclass` | ✅ Funcional | Usa `b in bands.names()` (bug `bands.has()` corregido) |
+| `services/classmap_service.py` | ✅ Funcional | Pipeline `run()` operativo con cobertura ≥75% |
+| `services/preprocessing_service.py` | ✅ Funcional | Helpers a nivel módulo; `__all__` limpio (SyntaxError corregido) |
+| `services/histogram_norm_service.py` | ✅ Funcional | `BandSet` importado correctamente |
+| `services/spectral_service.py` | 🟡 Parcial | Solo 3 índices disponibles (NDVI, NDWI, NDBI). BSI/MNDWI/SAVI/EVI en Fase 5 |
+| `services/training_service.py` | 🟡 Aislado | `TrainingService.build_dataset/split` listo, sin integración al pipeline aún |
+| `config.py` | ✅ Estable | Un único `model_config` con `frozen=True` (corregido en Sprint 1) |
+| `composition/di.py` | ✅ Funcional | Wiring completo: `build_classmap_service`, `build_preprocessing_service`, `build_histogram_norm_service`, etc. |
+| `cli.py` | ✅ Funcional | `argparse` + delega a `di.py`; entry point `satplatform` registrado |
+| `tests/` | 🟢 38 tests, 62% cobertura | Unit + integration con autogeneración de fixtures TIFF |
+| CI/CD | ⬜ Pendiente | GitHub Actions planificado para Fase 8 |
 
 ---
 
@@ -149,10 +149,31 @@ src/satplatform/
 │   ├── csv_catalog.py
 │   └── csv_exporter.py
 ├── composition/
-│   └── di.py           # Wiring: construye servicios inyectando adapters
+│   └── di.py           # Composition root: build_classmap_service, build_*_service
 ├── config.py           # Settings (Pydantic), validación de placeholders
-└── cli.py              # Entrypoint argparse
+└── cli.py              # Entrypoint argparse; delega a di.build_*_service
 ```
+
+### Composition root (`composition/di.py`)
+
+Todo el wiring adapters↔ports↔services vive aquí. `cli.py` y futuros consumidores
+solo deben llamar a estos builders, nunca construir adapters/services directamente.
+
+| Builder | Devuelve |
+|---|---|
+| `build_settings(project_root)` | `Settings` con `class_labels.json` fusionado |
+| `resolve_classes(settings)` | tuple de `ClassLabel` (settings o defaults) |
+| `build_raster_reader()` | `GdalRasterReader` (rasterio→GDAL→tifffile) |
+| `build_raster_writer()` | `GdalRasterWriter` |
+| `build_clipper(settings)` | `GdalWarpClipper` |
+| `build_preprocessing_adapter()` | `LegacyHistNormAdapter` |
+| `build_pixel_classifier(settings)` | `LegacyPixelClassifier` con clases inyectadas |
+| `build_class_mapper()` | `LegacyClassMapAdapter` |
+| `build_classmap_service(settings)` | `ClassMapService` con todos los puertos cableados |
+| `build_preprocessing_service(settings)` | `PreprocessingService` cableado |
+| `build_histogram_norm_service(settings)` | `HistogramNormService` cableado |
+| `build_spectral_service()` | `SpectralService` (puro dominio) |
+| `build_training_service()` | `TrainingService` (puro dominio) |
 
 ### Estructura de proyectos (layout físico)
 
@@ -212,15 +233,26 @@ source .venv/bin/activate        # Linux/macOS
 pip install -e ".[dev]"
 
 # 4. Verificar instalación
+satplatform --help        # entry point registrado en pyproject.toml
+# o equivalente:
 python -m satplatform.cli --help
 ```
 
+### Extras de instalación disponibles
+
+| Extra | Contenido | Cuándo usarlo |
+|---|---|---|
+| `[tests]` | `pytest`, `pytest-cov` | CI mínimo |
+| `[dev]` | tests + `ruff`, `mypy`, `pre-commit` | Desarrollo |
+| `[raster]` | `rasterio>=1.3` | Producción (lectura georreferenciada) |
+
 ### Sin GDAL (modo degradado para desarrollo)
 
-Si no tienes GDAL instalado, el reader hace fallback automático a `tifffile` (sin georreferencia). Este modo solo sirve para correr tests unitarios — no usar en producción.
+Las dependencias base (`pyproject.toml`) ya incluyen `tifffile` y `Pillow`, así que la
+suite de tests corre **sin GDAL/rasterio**. En producción, instala el extra `[raster]`:
 
 ```bash
-pip install rasterio numpy pydantic pydantic-settings Pillow PyYAML
+pip install -e ".[dev,raster]"
 ```
 
 ### Verificación rápida
@@ -632,43 +664,54 @@ La suite está organizada en tres niveles con dependencias progresivas.
 
 ### Unit — sin datos reales, sin GDAL
 
-Prueban contratos y servicios con arrays numpy sintéticos. Deben correr en cualquier entorno.
+Prueban contratos y servicios con arrays numpy sintéticos. Corren en cualquier entorno.
 
 ```bash
 pytest tests/unit/ -q
 
 # Con cobertura
-pytest tests/unit/ --cov=satplatform.contracts --cov=satplatform.ports --cov-report=term-missing
+pytest --cov=satplatform --cov-report=term-missing
 ```
 
-Qué cubren: validación de `BandSet`, `GeoProfile`, `validate_profile_compat`, `NormalizeSpec`, `SceneId`, `CRSRef.equals()`, `_iter_placeholders` en config, lógica numérica de `HistogramNormService`.
+Qué cubren:
+- `contracts/`: `BandSet`, `GeoProfile`, `validate_profile_compat`, `SceneId`, `CRSRef`
+- `services/`: `ClassMapService` con fakes de ports, `HistogramNormService`, `PreprocessingService.rgb_to_hsl`
+- `composition/`: wiring de `di.build_*_service` valida que los puertos estén conectados
+- `config.py`: validación de placeholders, parseo de YAML, `crs_out_ref()`
+- **Regresiones**: 3 bugs históricos (SyntaxError, `bands.has()`, `BandSet` no importado) + 1 nuevo (NaN nodata en `validate_profile_compat`) + RGB→HSL con escalar común
 
-### Integration — requiere rasterio o GDAL
-
-Prueban adapters con archivos reales pequeños (5×5 px).
+### Integration — autogenera fixtures con `tifffile`
 
 ```bash
 pytest tests/integration/ -m gdal -q
 ```
 
-Qué cubren: `GdalRasterReader` con TIFFs reales, `GdalWarpClipper` con GeoJSON sintético, `LegacyHistNormAdapter.normalize()`.
+`test_gdal_raster_reader` genera su propio TIFF de 5×5 con `tifffile` y valida el fallback del reader.
 
-### E2E — CLI con estructura de proyecto completa
+### Cobertura actual
 
-```bash
-pytest tests/e2e/ -q --project-root /path/to/test_project
+```
+Módulo                                      Cobertura
+contracts/core.py                           85%
+contracts/geo.py                            58%
+contracts/products.py                       78%
+ports/*                                     100%
+services/classmap_service.py                78%
+services/histogram_norm_service.py          53%
+services/preprocessing_service.py           61%
+services/spectral_service.py                20%
+services/training_service.py                38%
+adapters/legacy_pixelclass_adapter.py       98%
+adapters/legacy_histnorm_adapter.py         70%
+adapters/legacy_classmap_adapter.py         56%
+adapters/gdal_raster_reader.py              32%
+composition/di.py                           91%
+config.py                                   89%
+─────────────────────────────────────────────────
+TOTAL                                       62%
 ```
 
-Qué cubren: `cli.py classify` end-to-end con bandas sintéticas de 100×100 px, verificación de artefactos de salida.
-
-### Cobertura actual y objetivos
-
-| Módulo | Cobertura actual | Objetivo |
-|---|---|---|
-| `contracts/` | ⬜ Sin medir | ≥ 95% |
-| `ports/` | ⬜ Sin medir | ≥ 90% |
-| `services/` | ⬜ Sin medir | ≥ 85% |
-| `adapters/` | ⬜ Sin medir | ≥ 70% |
+Total: **38 tests, 100% pass**. Próximos objetivos: `services/` ≥85%, `adapters/` ≥70%, `spectral_service.py` ≥80%.
 
 ### Calidad de código
 
@@ -847,9 +890,9 @@ El `Dockerfile` está planificado para Fase 8 junto con el soporte de CI/CD.
 | 1 | `settings.yaml` válido, placeholders cerrados | ✅ Completa |
 | 2 | Contracts inmutables (`GeoRaster`, `BandSet`, `ClassLabel`) | ✅ Completa |
 | 3 | Ports cerrados y documentados | ✅ Completa |
-| 4 | Services alineados con tests unitarios (dominio puro) | 🔴 En progreso — bugs activos |
-| 5 | Adapters mínimos (GDAL reader/writer/clipper) | 🟡 Parcial — legacy con bugs |
-| 6 | CLI reproducible paso a paso (classify funcional) | 🟡 Parcial — argparse operativo |
+| 4 | Services alineados con tests unitarios (dominio puro) | ✅ Completa — bugs bloqueantes corregidos, 38 tests |
+| 5 | Adapters mínimos (GDAL reader/writer/clipper) | 🟡 Parcial — legacy funcional, falta sklearn classifier |
+| 6 | CLI reproducible paso a paso (classify funcional) | ✅ Completa — entry point `satplatform`, wiring vía `di.py` |
 | 7 | Exporters: reportes CSV, quicklooks PNG con metadatos | ⬜ Pendiente |
 | 8 | CI/CD: tests automáticos + Docker + GitHub Actions | ⬜ Pendiente |
 

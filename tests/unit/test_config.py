@@ -8,7 +8,9 @@ from satplatform.composition.di import build_settings
 
 def test_settings_parse_and_paths(tmp_path: Path):
     s = Settings(project_root=tmp_path, crs_out="EPSG:32719")
-    assert isinstance(s.crs_out, CRSRef)
+    assert s.crs_out == "EPSG:32719"
+    assert isinstance(s.crs_out_ref(), CRSRef)
+    assert s.crs_out_ref().epsg == 32719
     assert s.work_roi_dir.is_absolute()
     p = s.out_path("stack", date="2025-01-01")
     assert tmp_path in p.parents

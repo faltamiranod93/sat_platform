@@ -165,8 +165,14 @@ def validate_profile_compat(a: GeoProfile, b: GeoProfile, *, require_same_crs: b
         raise ValueError("GeoTransform no coincide (requiere resampling/alineación).")
     if a.dtype != b.dtype:
         raise ValueError(f"dtype no coincide: {a.dtype} vs {b.dtype}")
-    if (a.nodata is None) != (b.nodata is None) or (a.nodata != b.nodata):
+    if (a.nodata is None) != (b.nodata is None):
         raise ValueError(f"nodata no coincide: {a.nodata} vs {b.nodata}")
+    if a.nodata is not None and b.nodata is not None:
+        # NaN != NaN en aritmética IEEE — trátalos como iguales explícitamente.
+        a_nan = math.isnan(a.nodata)
+        b_nan = math.isnan(b.nodata)
+        if a_nan != b_nan or (not a_nan and a.nodata != b.nodata):
+            raise ValueError(f"nodata no coincide: {a.nodata} vs {b.nodata}")
 
 def pretty_bounds(b: Bounds, ndigits: int = 3) -> str:
     return (f"Bounds(minx={b.minx:.{ndigits}f}, miny={b.miny:.{ndigits}f}, "
