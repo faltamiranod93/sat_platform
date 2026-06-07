@@ -31,21 +31,19 @@ from scipy.stats import chi2
 # ---------------------------------------------------------
 name = 'Laguna-Seca'
 ver = 'v9'
-base_path = Path(r'C:/Users/felip/Desktop/Msc-UTFSM') / name  # <-- cambia si corresponde
+import sys as _sys; _sys.path.insert(0, str(Path(__file__).parent.parent))
+from env_config import MSC_ROOT, CONFIG_JSON, MCAL_DIR
+base_path = MSC_ROOT / name
 
-archivo_mcal_mod = base_path / 'McalHSL_mod_v7_py.csv'        # <-- tu McalHSL_mod (con H,S,L)
-archivo_roi_list = base_path / '02-Space-Facilities' / '04-ROI-MOD.csv'
+archivo_mcal_mod  = MCAL_DIR / 'McalHSL_mod_v7_py.csv'
+archivo_roi_list  = base_path / '02-Space-Facilities' / '04-ROI-MOD.csv'
 archivo_roi_class = base_path / '02-Space-Facilities' / '05-ROI-MOD-CLASS.csv'
-config_json = Path(r'C:/Users/felip/Desktop/Msc-UTFSM/00_Codigos/Python') / 'config_bandas_v3.json'  # <-- ajusta
+config_json       = CONFIG_JSON
 
-# name = 'Laguna-Seca'
+# Variante temporal (descomentar para usar normalización RRN):
 # ver = 'v9_modv3'
-# base_path = Path(r'C:/Users/felip/Desktop/Msc-UTFSM') / name  # <-- cambia si corresponde
-# 
-# archivo_mcal_mod = base_path / '02-Space-Facilities/ROI-MOD-v2' / 'McalHSL_mod_temporal.csv'        # <-- tu McalHSL_mod (con H,S,L)
+# archivo_mcal_mod = base_path / '02-Space-Facilities/ROI-MOD-v2' / 'McalHSL_mod_temporal.csv'
 # archivo_roi_list = base_path / '02-Space-Facilities' / '04-ROI-MOD-v2.csv'
-# archivo_roi_class = base_path / '02-Space-Facilities' / '05-ROI-MOD-CLASS.csv'
-# config_json = Path(r'C:/Users/felip/Desktop/Msc-UTFSM/00_Codigos/Python') / 'config_bandas_v3.json'  # <-- ajusta
 
 # Directorio de salida
 class_dir = base_path / '03-Report' / '04_CLASSMAP' / ver

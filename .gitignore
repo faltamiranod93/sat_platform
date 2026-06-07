@@ -42,6 +42,9 @@ coverage.xml
 .DS_Store
 Thumbs.db
 
+# Local environment config (no subir al repo)
+legacy/.env
+
 # Imágenes satelitales y datos raster grandes
 *.tif
 *.jp2
