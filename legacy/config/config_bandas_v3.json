@@ -1,0 +1,10 @@
+{
+    "nameg": ["no class", "agua profunda", "agua superficial", "terreno natural", "relave seco", "relave consolidado", "relave húmedo", "terreno intervenido", "geomembrana", "geomembrana con polvo", "relave con polvo", "terreno sombreado"],
+    "color": [[0,255,0], [0, 0, 100], [0, 0, 200], [200, 100, 0], [200, 200, 200], [100, 100, 100], [50, 50, 50], [200,150,100],[210, 0, 210],[128, 0, 128], [255, 200, 200], [100,50,50]],
+    "lam": [492.4, 559.8, 664.6, 832.8, 704.1, 740.5, 782.8, 1613.7, 2202.4, 864.7, 442.7, 945.1],
+    "Nband": ["B02", "B03", "B04", "B08", "B05", "B06", "B07", "B11", "B12", "B8A", "B01", "B09"],
+    "Nband_sort": ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12"],
+    "NbandHSL": ["B02","B03","B04","B08","B05","B06","B07","B11","B12","B8A","B01","B09","H","S","L"],
+    "NbandHSL_sort": ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12","H","S","L"],
+    "Nband_filter": ["B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B11", "B12"]
+}

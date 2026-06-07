@@ -41,3 +41,11 @@ coverage.xml
 # OS
 .DS_Store
 Thumbs.db
+
+# Imágenes satelitales y datos raster grandes
+*.tif
+*.jp2
+*.mat
+*.dat
+*.rar
+*.SAFE/
