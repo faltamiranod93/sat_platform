@@ -7,22 +7,23 @@
 ---
 
 ## Última sesión activa
-**Fecha:** 2026-06-07
+**Fecha:** 2026-06-08
 **Computador:** personal (C:/Users/felip)
 
 ## Qué se hizo
-- Migración completa de los 3 clasificadores legacy a sat-platform como adapters nativos:
-  - `MahalanobisClassifierAdapter` (cubre v9 y v9p2, con/sin HSL)
-  - `CosineClassifierAdapter` (cubre v4, v5.0, v5.1 con flag `two_stage`)
-  - `EuclideanClassifierAdapter` (cubre v3)
-- 28 tests unitarios, todos pasando (`pytest tests/unit/adapters/`)
-- Builders en `composition/di.py`: `build_mahalanobis_classifier`, `build_cosine_classifier`, `build_euclidean_classifier`, `build_classmap_service_with_mahalanobis`
-- Lectura y síntesis de 6 papers de RRN multitemporal → `10 papers/INDEX.md`
-- Skill `/inicio` creado para arranque de sesión
+- `McalGeorefService.to_geojson()`: exporta ground truth como GeoJSON puro (geometría + Ng + Fecha, sin bandas espectrales). 19 tests pasando.
+- `McalHSL_mod_v7_py_utm.geojson` generado y commiteado (1 721 puntos, EPSG:32719). Abre en QGIS con CRS 32719.
+- Skills `/inicio` y `/fin` creados y pusheados al repo.
+- `MEMORY.md` reorganizado por secciones (sat-platform / Laguna Seca / Workflow).
 
 ## Próximo paso inmediato
-Migrar `legacy/scripts/s_Sat_temporal_rrn_pif_v3.py` a sat-platform como `TemporalNormPort` + `TemporalRRNAdapter` + `TemporalNormService`. Es el eslabón que habilita la clasificación multitemporal consistente entre fechas.
+Llevar el trabajo al computador de la universidad:
+1. `git pull` para traer todo lo hecho
+2. Adaptar rutas via `MSC_UTFSM_ROOT` env var (ver `legacy/env_config.py`)
+3. Usar `McalGeorefService.extract_at_utm_points()` para re-extraer valores espectrales en el nuevo ROI universitario
+4. Generar nuevo Mcal desde los puntos UTM + imágenes de la universidad
 
 ## Pendiente / bloqueado
-- Prueba end-to-end pendiente: cargar `McalHSL_mod_v7_py.csv`, ajustar Mahalanobis, correr sobre una escena ROI real de Laguna Seca y comparar contra resultados en `03-Report/04_CLASSMAP/v9p2/`
-- 4 tests pre-existentes fallando en la suite (no causados por esta sesión): `test_settings_parse_and_paths`, `test_classmap_service_contracts`, `test_rgb_to_hsl_contract_and_ranges`, `test_discover_and_build_row`
+- 4 tests pre-existentes fallando (no causados por trabajo reciente): `test_settings_parse_and_paths`, `test_classmap_service_contracts`, `test_rgb_to_hsl_contract_and_ranges`, `test_discover_and_build_row`
+- Migración `TemporalNormPort` + adapter (RRN multitemporal) pendiente para después de la universidad
+- Prueba end-to-end Mahalanobis sobre escena real de Laguna-Seca pendiente
