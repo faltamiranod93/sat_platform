@@ -1,4 +1,6 @@
 """Unit tests para McalGeorefService (sin I/O)."""
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -169,3 +171,70 @@ class TestExtractAtUtmPoints:
         utm_df = pd.concat([in_bounds, out_of_bounds], ignore_index=True)
         out = svc.extract_at_utm_points(utm_df, prof, bands, ["B02"])
         assert len(out) == 2
+
+
+# ---------------------------------------------------------------------------
+# to_geojson
+# ---------------------------------------------------------------------------
+
+class TestToGeojson:
+
+    def _utm_df(self) -> pd.DataFrame:
+        return pd.DataFrame({
+            "Fecha": ["2020-04-03", "2021-04-28", "2022-04-28"],
+            "UTM_E": [487000.0, 488000.0, 489000.0],
+            "UTM_N": [7299000.0, 7300000.0, 7301000.0],
+            "Ng":    [1, 3, 5],
+            "EPSG":  [32719, 32719, 32719],
+            "B02":   [1000, 1200, 1100],   # columna espectral — debe excluirse
+            "H":     [0.5, 0.6, 0.4],      # columna HSL — debe excluirse
+        })
+
+    def test_valid_json(self):
+        svc = McalGeorefService()
+        result = svc.to_geojson(self._utm_df())
+        parsed = json.loads(result)
+        assert parsed["type"] == "FeatureCollection"
+
+    def test_feature_count(self):
+        svc = McalGeorefService()
+        result = json.loads(svc.to_geojson(self._utm_df()))
+        assert len(result["features"]) == 3
+
+    def test_geometry_type_and_coordinates(self):
+        svc = McalGeorefService()
+        df = self._utm_df()
+        result = json.loads(svc.to_geojson(df))
+        feat = result["features"][0]
+        assert feat["geometry"]["type"] == "Point"
+        assert feat["geometry"]["coordinates"] == [487000.0, 7299000.0]
+
+    def test_properties_contain_ng_and_fecha(self):
+        svc = McalGeorefService()
+        result = json.loads(svc.to_geojson(self._utm_df()))
+        props = result["features"][0]["properties"]
+        assert "Ng" in props
+        assert "Fecha" in props
+        assert props["Ng"] == 1
+        assert props["Fecha"] == "2020-04-03"
+
+    def test_no_spectral_columns_in_properties(self):
+        svc = McalGeorefService()
+        result = json.loads(svc.to_geojson(self._utm_df()))
+        for feat in result["features"]:
+            props = feat["properties"]
+            for spectral in ("B02", "B03", "B04", "H", "S", "L"):
+                assert spectral not in props
+
+    def test_writes_file(self, tmp_path):
+        svc = McalGeorefService()
+        out = tmp_path / "ground_truth.geojson"
+        svc.to_geojson(self._utm_df(), path=out)
+        assert out.exists()
+        parsed = json.loads(out.read_text(encoding="utf-8"))
+        assert len(parsed["features"]) == 3
+
+    def test_crs_in_output(self):
+        svc = McalGeorefService()
+        result = json.loads(svc.to_geojson(self._utm_df(), epsg=32719))
+        assert result["crs"] == "EPSG:32719"

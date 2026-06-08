@@ -9,12 +9,21 @@ Flujo típico:
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Sequence
 
 import numpy as np
 import pandas as pd
 
 from ..contracts.geo import GeoProfile, pixel_to_world, world_to_pixel
+
+# Columnas espectrales que se excluyen automáticamente del GeoJSON
+_SPECTRAL_COLS = frozenset([
+    "B01", "B02", "B03", "B04", "B05", "B06",
+    "B07", "B08", "B8A", "B09", "B11", "B12",
+    "H", "S", "L",
+])
 
 
 class McalGeorefService:
@@ -105,6 +114,60 @@ class McalGeorefService:
             return pd.DataFrame(columns=cols)
 
         return pd.DataFrame(records)
+
+    def to_geojson(
+        self,
+        utm_df: pd.DataFrame,
+        path: Path | None = None,
+        extra_cols: list[str] | None = None,
+        epsg: int = 32719,
+    ) -> str:
+        """Exporta puntos de ground truth como GeoJSON (geometría + clase, sin bandas).
+
+        Args:
+            utm_df: DataFrame con columnas 'UTM_E', 'UTM_N', 'Ng', 'Fecha'.
+                    Columnas espectrales (B01–B12, H, S, L) se excluyen automáticamente.
+            path: si se indica, escribe el archivo en esa ruta; si no, devuelve el string.
+            extra_cols: columnas adicionales a incluir como properties.
+            epsg: CRS de las coordenadas (se guarda como metadata en el JSON).
+
+        Returns:
+            String GeoJSON válido.
+        """
+        keep = {"Ng", "Fecha"} | set(extra_cols or [])
+        property_cols = [
+            c for c in utm_df.columns
+            if c in keep and c not in ("UTM_E", "UTM_N", "EPSG")
+        ]
+
+        features = []
+        for _, row in utm_df.iterrows():
+            feature = {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [float(row["UTM_E"]), float(row["UTM_N"])],
+                },
+                "properties": {
+                    col: (int(row[col]) if col == "Ng" else str(row[col]))
+                    for col in property_cols
+                    if col in row.index
+                },
+            }
+            features.append(feature)
+
+        collection = {
+            "type": "FeatureCollection",
+            "crs": f"EPSG:{epsg}",
+            "features": features,
+        }
+        geojson_str = json.dumps(collection, ensure_ascii=False, indent=2)
+
+        if path is not None:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(geojson_str, encoding="utf-8")
+
+        return geojson_str
 
 
 __all__ = ["McalGeorefService"]

@@ -112,6 +112,16 @@ def add_utm(mcal_path: Path, ref_tif: Path, out_path: Path, epsg: int = 32719) -
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_path, index=False)
     print(f"Guardado: {out_path}  ({n} filas)")
+    return df
+
+
+def export_geojson(utm_df: pd.DataFrame, out_csv_path: Path, epsg: int = 32719) -> Path:
+    from satplatform.services.mcal_georef_service import McalGeorefService
+    svc = McalGeorefService()
+    geojson_path = out_csv_path.with_suffix(".geojson")
+    svc.to_geojson(utm_df, path=geojson_path, epsg=epsg)
+    print(f"GeoJSON guardado: {geojson_path}")
+    return geojson_path
 
 
 if __name__ == "__main__":
@@ -120,6 +130,10 @@ if __name__ == "__main__":
     parser.add_argument("--ref_tif", type=Path, default=DEFAULT_REF_TIF)
     parser.add_argument("--out",     type=Path, default=DEFAULT_OUT)
     parser.add_argument("--epsg",    type=int,  default=32719)
+    parser.add_argument("--geojson", action="store_true",
+                        help="También exporta un GeoJSON con geometría + clase (sin bandas)")
     args = parser.parse_args()
 
-    add_utm(args.mcal, args.ref_tif, args.out, args.epsg)
+    utm_df = add_utm(args.mcal, args.ref_tif, args.out, args.epsg)
+    if args.geojson:
+        export_geojson(utm_df, args.out, args.epsg)
