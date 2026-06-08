@@ -258,6 +258,12 @@ def build_training_service():
     return TrainingService()
 
 
+def build_mcal_georef_service():
+    """McalGeorefService es puro dominio — no requiere wiring."""
+    from ..services.mcal_georef_service import McalGeorefService
+    return McalGeorefService()
+
+
 __all__ = [
     # Settings helpers
     "load_settings_from_yaml",
@@ -283,4 +289,5 @@ __all__ = [
     "build_histogram_norm_service",
     "build_spectral_service",
     "build_training_service",
+    "build_mcal_georef_service",
 ]
