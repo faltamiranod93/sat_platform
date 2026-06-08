@@ -111,6 +111,106 @@ def build_class_mapper():
 
 
 # ---------------------------------------------------------------------------
+# Classifier adapters nativos (Mahalanobis / Cosine / Euclidean)
+# ---------------------------------------------------------------------------
+
+def build_mahalanobis_classifier(
+    mcal_path: Path,
+    classes: "tuple[ClassLabel, ...]",
+    include_hsl: bool = True,
+    band_filter: "tuple[str, ...] | None" = None,
+    diag_reg: float = 1e-6,
+):
+    """Ajusta un MahalanobisClassifierAdapter desde un CSV Mcal.
+
+    include_hsl=True  → v9p2 (activo, usa H S L físico)
+    include_hsl=False → v9   (solo bandas espectrales)
+    """
+    import pandas as pd
+    from ..adapters.mahalanobis_classifier import (
+        MahalanobisClassifierAdapter,
+        DEFAULT_BAND_FILTER,
+    )
+    mcal_df = pd.read_csv(mcal_path)
+    bf = band_filter if band_filter is not None else DEFAULT_BAND_FILTER
+    return MahalanobisClassifierAdapter.fit(
+        mcal_df=mcal_df,
+        classes=classes,
+        band_filter=bf,
+        include_hsl=include_hsl,
+        diag_reg=diag_reg,
+    )
+
+
+def build_cosine_classifier(
+    mcal_path: Path,
+    classes: "tuple[ClassLabel, ...]",
+    band_filter: "tuple[str, ...]",
+    include_hsl: bool = False,
+    two_stage: bool = False,
+    stage2_class_ids: "tuple[int, ...] | None" = None,
+):
+    """Ajusta un CosineClassifierAdapter desde un CSV Mcal.
+
+    two_stage=False → v4
+    two_stage=True  → v5.0 / v5.1
+    """
+    import pandas as pd
+    from ..adapters.cosine_classifier import CosineClassifierAdapter
+    mcal_df = pd.read_csv(mcal_path)
+    s2ids: tuple[int, ...] = stage2_class_ids if stage2_class_ids is not None else (3, 4, 5)
+    return CosineClassifierAdapter.fit(
+        mcal_df=mcal_df,
+        classes=classes,
+        band_filter=band_filter,
+        include_hsl=include_hsl,
+        two_stage=two_stage,
+        stage2_class_ids=s2ids,
+    )
+
+
+def build_euclidean_classifier(
+    mcal_path: Path,
+    classes: "tuple[ClassLabel, ...]",
+    band_filter: "tuple[str, ...]",
+    include_hsl: bool = False,
+):
+    """Ajusta un EuclideanClassifierAdapter desde un CSV Mcal (v3)."""
+    import pandas as pd
+    from ..adapters.euclidean_classifier import EuclideanClassifierAdapter
+    mcal_df = pd.read_csv(mcal_path)
+    return EuclideanClassifierAdapter.fit(
+        mcal_df=mcal_df,
+        classes=classes,
+        band_filter=band_filter,
+        include_hsl=include_hsl,
+    )
+
+
+def build_classmap_service_with_mahalanobis(
+    settings: "Settings",
+    mcal_path: Path,
+    include_hsl: bool = True,
+):
+    """Pipeline completo usando MahalanobisClassifierAdapter (v9p2 por defecto)."""
+    from ..services.classmap_service import ClassMapService
+    classes = resolve_classes(settings)
+    classifier = build_mahalanobis_classifier(
+        mcal_path=mcal_path,
+        classes=classes,
+        include_hsl=include_hsl,
+    )
+    return ClassMapService(
+        reader=build_raster_reader(),
+        writer=build_raster_writer(),
+        clipper=build_clipper(settings),
+        preproc=build_preprocessing_adapter(),
+        classifier=classifier,
+        cmapper=build_class_mapper(),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Services (cableados)
 # ---------------------------------------------------------------------------
 
@@ -172,6 +272,11 @@ __all__ = [
     "build_preprocessing_adapter",
     "build_pixel_classifier",
     "build_class_mapper",
+    # Classifier adapters nativos
+    "build_mahalanobis_classifier",
+    "build_cosine_classifier",
+    "build_euclidean_classifier",
+    "build_classmap_service_with_mahalanobis",
     # Services
     "build_classmap_service",
     "build_preprocessing_service",
