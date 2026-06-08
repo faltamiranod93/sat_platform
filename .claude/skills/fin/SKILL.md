@@ -1,3 +1,8 @@
+---
+name: fin
+description: Cerrar sesión de trabajo en MSc-UTFSM. Resume lo hecho, actualiza memorias locales si aplica, escribe SESION.md como breadcrumb, y ofrece commitear los cambios. Invocar con /fin al terminar de trabajar.
+---
+
 # /fin — Cerrar sesión de trabajo en MSc-UTFSM
 
 Cuando el usuario invoca `/fin`, ejecuta los siguientes pasos en orden.

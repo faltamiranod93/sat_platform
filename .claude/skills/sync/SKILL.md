@@ -1,3 +1,8 @@
+---
+name: sync
+description: Alias rápido para sincronizar git (pull + status + log) sin el resumen completo de contexto. Para un inicio de sesión completo usar /inicio. Invocar con /sync.
+---
+
 # /sync — Sincronizar git (alias rápido)
 
 Para un inicio de sesión completo con resumen de contexto, usar `/inicio`.

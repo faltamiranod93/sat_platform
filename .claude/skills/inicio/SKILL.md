@@ -1,3 +1,8 @@
+---
+name: inicio
+description: Resumen de sesión al iniciar trabajo en MSc-UTFSM. Sincroniza git, lee SESION.md y memorias, y presenta un resumen orientador de las líneas de trabajo (sat-platform, Laguna Seca, literatura). Invocar con /inicio al empezar a trabajar.
+---
+
 # /inicio — Resumen de sesión al iniciar trabajo en MSc-UTFSM
 
 Cuando el usuario invoca `/inicio`, ejecuta los siguientes pasos **en orden**:
