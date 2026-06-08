@@ -16,11 +16,14 @@ Informa brevemente:
 - Si ya estaba al día: confirmarlo en una línea
 - Si hay cambios locales sin commitear: listarlos con advertencia
 
-## Paso 2 — Leer estado del proyecto desde memoria
+## Paso 2 — Leer estado del proyecto
 
-Lee los archivos de memoria del proyecto. Usa la información para construir el resumen del paso 3:
-- `MEMORY.md` (índice)
-- Cualquier archivo de memoria relevante que el índice señale
+Lee en este orden:
+1. `sat-platform/.claude/SESION.md` — breadcrumb de la última sesión (qué se hizo, próximo paso, bloqueados)
+2. `MEMORY.md` (índice de memorias locales)
+3. Cualquier archivo de memoria relevante que el índice señale
+
+La información de SESION.md tiene prioridad para el "pendiente prioritario" — es lo más fresco.
 
 ## Paso 3 — Presentar resumen por líneas de trabajo
 
