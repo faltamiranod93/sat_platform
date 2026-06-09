@@ -95,7 +95,7 @@ def add_utm(mcal_path: Path, ref_tif: Path, out_path: Path, epsg: int = 32719) -
     utm_e = []
     utm_n = []
     for _, row in df.iterrows():
-        x, y = pixel_to_world(col=int(row["j"]), row=int(row["i"]), gt=gt)
+        x, y = pixel_to_world(col=int(row["j"]) + 0.5, row=int(row["i"]) + 0.5, gt=gt)
         utm_e.append(x)
         utm_n.append(y)
 

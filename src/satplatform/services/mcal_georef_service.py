@@ -53,7 +53,7 @@ class McalGeorefService:
         utm_n = np.empty(len(mcal_df), dtype=np.float64)
 
         for idx, (_, row) in enumerate(mcal_df.iterrows()):
-            x, y = pixel_to_world(col=int(row["j"]), row=int(row["i"]), gt=gt)
+            x, y = pixel_to_world(col=int(row["j"]) + 0.5, row=int(row["i"]) + 0.5, gt=gt)
             utm_e[idx] = x
             utm_n[idx] = y
 
@@ -158,7 +158,10 @@ class McalGeorefService:
 
         collection = {
             "type": "FeatureCollection",
-            "crs": f"EPSG:{epsg}",
+            "crs": {
+                "type": "name",
+                "properties": {"name": f"urn:ogc:def:crs:EPSG::{epsg}"},
+            },
             "features": features,
         }
         geojson_str = json.dumps(collection, ensure_ascii=False, indent=2)
