@@ -264,6 +264,18 @@ def build_mcal_georef_service():
     return McalGeorefService()
 
 
+def build_crs_transform():
+    """Adapter de reproyección de coordenadas (pyproj)."""
+    from ..adapters.pyproj_crs_transform import PyprojCrsTransform
+    return PyprojCrsTransform()
+
+
+def build_georef_fix_service():
+    """GeorefFixService: corrige georef geográfica-mal-etiquetada → UTM."""
+    from ..services.georef_fix_service import GeorefFixService
+    return GeorefFixService(crs_transform=build_crs_transform())
+
+
 __all__ = [
     # Settings helpers
     "load_settings_from_yaml",
@@ -290,4 +302,6 @@ __all__ = [
     "build_spectral_service",
     "build_training_service",
     "build_mcal_georef_service",
+    "build_crs_transform",
+    "build_georef_fix_service",
 ]
