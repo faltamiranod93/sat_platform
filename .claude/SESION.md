@@ -21,6 +21,7 @@
 Confirmar visualmente en QGIS que la escena corregida + los 552 puntos caen sobre Laguna Seca; luego crear la **orquestación batch** que aplique `GeorefFixService` a las 320 escenas de `01-Raw/s2` (leer perfil → fix → reescribir TIFF con rasterio).
 
 ## Pendiente / bloqueado
+- ⚠️ Merge con commit `4e7bfd6` del otro PC: `add_utm` ahora usa **centro de píxel** (+0.5) y `to_geojson` emite **CRS named OGC**. El GeoJSON v7 vigente se generó con esquina (offset 5 m) — **regenerarlo** con el código nuevo antes de extraer muestras definitivas. (3 tests se realinearon, suite 99/99.)
 - Batch de corrección de georef sobre las 320 escenas (2024–2026) + productos CLASSMAP derivados (heredan la georef rota).
 - Tras corregir: re-extraer muestras con `extract_at_utm_points` y validar valores de banda; recién ahí re-batch Mahalanobis v9p2 vs LegacyPixelClassifier (Paso 3 del plan post-pull, sigue pendiente).
 - Falencias del clasificador legacy sin atacar: nodata=Agua, sin ROI de Laguna Seca, sin máscara de nubes.
