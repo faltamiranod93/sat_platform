@@ -65,7 +65,10 @@ class TestAddUtm:
 
         gt = prof.transform
         for _, row in out.iterrows():
-            expected_x, expected_y = pixel_to_world(col=int(row["j"]), row=int(row["i"]), gt=gt)
+            # add_utm georreferencia el CENTRO del píxel (col+0.5, row+0.5)
+            expected_x, expected_y = pixel_to_world(
+                col=int(row["j"]) + 0.5, row=int(row["i"]) + 0.5, gt=gt
+            )
             assert abs(row["UTM_E"] - expected_x) < 1e-3
             assert abs(row["UTM_N"] - expected_y) < 1e-3
 
@@ -87,9 +90,10 @@ class TestAddUtm:
 
         gt = prof.transform
         for _, row in out.iterrows():
+            # add_utm usa el centro del píxel, así que el roundtrip recupera (j+0.5, i+0.5)
             col_f, row_f = world_to_pixel(x=row["UTM_E"], y=row["UTM_N"], gt=gt)
-            assert abs(col_f - row["j"]) < 0.5
-            assert abs(row_f - row["i"]) < 0.5
+            assert abs(col_f - (row["j"] + 0.5)) < 1e-6
+            assert abs(row_f - (row["i"] + 0.5)) < 1e-6
 
 
 # ---------------------------------------------------------------------------
@@ -237,4 +241,6 @@ class TestToGeojson:
     def test_crs_in_output(self):
         svc = McalGeorefService()
         result = json.loads(svc.to_geojson(self._utm_df(), epsg=32719))
-        assert result["crs"] == "EPSG:32719"
+        # CRS named OGC (lo que QGIS/OGR reconocen), no string plano
+        assert result["crs"]["type"] == "name"
+        assert result["crs"]["properties"]["name"] == "urn:ogc:def:crs:EPSG::32719"
