@@ -11,17 +11,17 @@
 **Computador:** universidad (geotecnia-usm)
 
 ## Qué se hizo
-- `git pull` aplicado: 9 commits nuevos (Mahalanobis/Cosine/Euclidean + McalGeorefService + skills + GeoJSON UTM v7).
-- Suite verde: **85/85 tests** (38 viejos + 47 nuevos para adapters nativos y mcal_georef). Los 4 tests que fallaban en personal ya están arreglados.
-- Auditoría del Mcal completada: **11 clases reales** (no 3); v7 tiene 1721 muestras en 4 fechas; **552 puntos del 2024-01-23 coinciden con una de las 160 escenas** de `01-Laguna-Seca-example/`.
-- Hallazgo crítico: el Mcal NO usa la misma grilla que los TIFFs Sentinel Hub (correlación banda-a-banda ~0). Solo coordenadas UTM + Ng son reutilizables.
-- Output fuera de repo: `01-Laguna-Seca-example/04-Analysis/Mcal_audit.md` (no se commitea, son datos del Msc).
+- **Bloqueador resuelto.** El GeoJSON Mcal v7 SÍ está bien (EPSG:32719). El bug era la georref de los TIFFs Sentinel Hub: declaran 4326/geográfico con origen lon/lat pero píxel métrico 10 m — en realidad UTM 19S. Por eso `extract_at_utm_points` daba 0/552 puntos.
+- **Nuevo: `GeorefFixService`** (commit `a0c2a1b`): port `CrsTransformPort` + adapter `PyprojCrsTransform` + servicio puro `needs_fix()/fix()` (origen lon/lat→UTM, reescribe CRS). Cableado en di. `pyproj>=3.5` a deps core. Suite **99/99** (14 tests nuevos).
+- **Verificado end-to-end**: escena `20240123` corregida → origen E=479556 N=7306103, los 552 puntos caen dentro. TIFF + GeoJSON de puntos escritos en `01-Laguna-Seca-example/04-Analysis/georef_fix_verify/` (fuera del repo) para abrir en QGIS. Confirmado con gdalinfo/ogrinfo.
+- Skills `/inicio` `/fin` `/sync` reparadas a formato directorio/SKILL.md (commit `1c8ae2c`).
+- Instalado en .venv: `pyproj`, `rasterio` (este último ya era backend opcional `raster`).
 
 ## Próximo paso inmediato
-**Verificar que `McalHSL_mod_v7_py_utm.geojson` está realmente en EPSG:32719.** El usuario lo cuestionó al cerrar la sesión — sin esto, `extract_at_utm_points()` produce basura. Verificar bbox esperado para Laguna Seca: UTM 19S aprox. 485000-500000 E, 7290000-7305000 N. Si está mal proyectado, regenerar antes de continuar el Paso 3.
+Confirmar visualmente en QGIS que la escena corregida + los 552 puntos caen sobre Laguna Seca; luego crear la **orquestación batch** que aplique `GeorefFixService` a las 320 escenas de `01-Raw/s2` (leer perfil → fix → reescribir TIFF con rasterio).
 
 ## Pendiente / bloqueado
-- 🔴 **Bloqueador**: confirmar proyección del GeoJSON UTM v7 antes de extraer muestras.
-- Paso 3 del plan post-pull pendiente: re-batch 160 escenas con Mahalanobis v9p2 + comparativa contra LegacyPixelClassifier.
-- Falencias previas del clasificador legacy siguen sin atacarse: nodata=Agua, sin ROI de Laguna Seca, sin máscara de nubes.
-- Migración `TemporalNormPort` + adapter (RRN multitemporal) seguía pendiente desde la sesión anterior.
+- Batch de corrección de georef sobre las 320 escenas (2024–2026) + productos CLASSMAP derivados (heredan la georef rota).
+- Tras corregir: re-extraer muestras con `extract_at_utm_points` y validar valores de banda; recién ahí re-batch Mahalanobis v9p2 vs LegacyPixelClassifier (Paso 3 del plan post-pull, sigue pendiente).
+- Falencias del clasificador legacy sin atacar: nodata=Agua, sin ROI de Laguna Seca, sin máscara de nubes.
+- Migración `TemporalNormPort` + adapter (RRN multitemporal) pendiente.
