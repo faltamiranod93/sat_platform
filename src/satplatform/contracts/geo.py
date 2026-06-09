@@ -135,7 +135,7 @@ def bounds_to_geotransform(bounds: Bounds, width: int, height: int) -> GeoTransf
     py = (miny - maxy) / float(height)  # negativo (origen en esquina sup-izq)
     return (minx, px, 0.0, maxy, 0.0, py)
 
-def pixel_to_world(col: int, row: int, gt: GeoTransform) -> Tuple[float, float]:
+def pixel_to_world(col: float, row: float, gt: GeoTransform) -> Tuple[float, float]:
     x0, px, rx, y0, ry, py = gt
     x = x0 + col * px + row * rx
     y = y0 + col * ry + row * py
