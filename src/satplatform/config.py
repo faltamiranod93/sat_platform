@@ -36,10 +36,10 @@ INPUT_PLACEHOLDERS: Mapping[str, Tuple[str, ...]] = MappingProxyType({
 })
 
 OUTPUT_PLACEHOLDERS: Mapping[str, Tuple[str, ...]] = MappingProxyType({
-    "stack":        ("date",),
-    "hist_norm":    ("date",),
-    "features_hsl": ("date",),
-    "classmap":     ("date",),
+    "classmap":        ("date", "classifier"),
+    "classmap_vis":    ("date", "classifier"),
+    "features":        ("date",),
+    "compare_summary": ("name",),
 })
 
 
@@ -114,10 +114,10 @@ class Settings(BaseSettings):
     })
 
     output_patterns: Dict[str, str] = Field(default_factory=lambda: {
-        "stack":        "02-Work/STACK/{date}/stack.tif",
-        "hist_norm":    "02-Work/HIST-NORM/{date}/hn.tif",
-        "features_hsl": "02-Work/FEATURES/{date}/hsl.tif",
-        "classmap":     "03-Products/CLASSMAP/{date}/classmap.tif",
+        "classmap":        "03-Products/CLASSMAP/{date}/classmap_{classifier}.tif",
+        "classmap_vis":    "03-Products/VIS/{date}/classmap_{classifier}.png",
+        "features":        "02-Work/FEATURES/{date}/features.tif",
+        "compare_summary": "04-Analysis/CLASSMAP-COMPARE/{name}.csv",
     })
 
     # ── Validadores ──────────────────────────────────────────────────────────

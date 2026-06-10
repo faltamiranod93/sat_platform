@@ -93,3 +93,10 @@ def test_build_batch_classify_service_trains_three(settings: Settings):
     assert {c.key for c in svc.classifiers} == {"maha", "cos", "euc"}
     from satplatform.adapters.georef_fixing_raster_reader import GeorefFixingRasterReader
     assert isinstance(svc.reader, GeorefFixingRasterReader)
+    # los resolvers resuelven al esquema de carpetas del contrato
+    cm = str(svc.classmap_path("20240123", "maha")).replace("\\", "/")
+    assert cm.endswith("03-Products/CLASSMAP/20240123/classmap_maha.tif")
+    vis = str(svc.vis_path("20240123", "cos")).replace("\\", "/")
+    assert vis.endswith("03-Products/VIS/20240123/classmap_cos.png")
+    summ = str(svc.summary_path("agreement")).replace("\\", "/")
+    assert summ.endswith("04-Analysis/CLASSMAP-COMPARE/agreement.csv")

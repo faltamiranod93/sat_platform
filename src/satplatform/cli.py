@@ -107,7 +107,9 @@ def cmd_stack(args: argparse.Namespace) -> int:
     order = tuple(args.order) if args.order else tuple(band_map.keys())
     stacked = bs.stack(order)
 
-    out_path = Path(args.out) if args.out else s.out_path("stack", date=args.date)
+    if not args.out:
+        raise ValueError("'stack' está fuera del esquema estándar del pipeline; especifica --out <ruta>")
+    out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     writer.write(str(out_path), stacked)
     print(str(out_path))
@@ -120,10 +122,13 @@ def cmd_hist_norm(args: argparse.Namespace) -> int:
     writer = di.build_raster_writer()
     pre = di.build_preprocessing_adapter()
 
+    if not args.out:
+        raise ValueError("'hist-norm' está fuera del esquema estándar del pipeline; especifica --out <ruta>")
+
     if args.input and len(args.input) == 1:
         r = reader.read(args.input[0])
         rn = pre.normalize(r)
-        out_path = Path(args.out) if args.out else s.out_path("hist_norm", date=args.date)
+        out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         writer.write(str(out_path), rn)
         print(str(out_path))
@@ -149,7 +154,7 @@ def cmd_hist_norm(args: argparse.Namespace) -> int:
     order = tuple(args.order) if args.order else tuple(band_map.keys())
     stacked = bs.stack(order)
 
-    out_path = Path(args.out) if args.out else s.out_path("hist_norm", date=args.date)
+    out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     writer.write(str(out_path), stacked)
     print(str(out_path))
@@ -167,7 +172,10 @@ def cmd_classify(args: argparse.Namespace) -> int:
     roi_geom = _load_roi_geojson(args.roi) if args.roi else None
     roi_crs: CRSRef | None = s.crs_out_ref() if roi_geom else None
 
-    out_tif = Path(args.out) if args.out else s.out_path("classmap", date=args.date)
+    out_tif = (
+        Path(args.out) if args.out
+        else s.out_path("classmap", date=args.date, classifier=svc.classifier.name())
+    )
     out_png = out_tif.with_suffix(".png") if args.png else None
 
     inputs = ClassMapInputs(band_uris=band_map, classes=di.resolve_classes(s))
@@ -200,13 +208,14 @@ def cmd_classify_batch(args: argparse.Namespace) -> int:
     import glob
     import logging
 
+    from .services.training_set_builder import is_scene_file, scene_index_from_uris
+
     indices = tuple(x.strip().upper() for x in args.indices.split(",") if x.strip()) if args.indices else ()
 
     root = Path(args.root).resolve() if args.root else Path.cwd()
     s = di.build_settings(root).model_copy(update={"project_root": root})
     geojson = Path(args.geojson)
     scenes_glob = args.scenes_glob if Path(args.scenes_glob).is_absolute() else str(root / args.scenes_glob)
-    out_root = Path(args.out) if Path(args.out).is_absolute() else root / args.out
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
@@ -221,22 +230,25 @@ def cmd_classify_batch(args: argparse.Namespace) -> int:
         print("[ERROR] No hay muestras de entrenamiento (ninguna fecha con escena).", file=sys.stderr)
         return 1
 
-    # 2) Escenas a clasificar (filtra sidecars .aux.xml/.xml; --limit opcional)
-    from .services.training_set_builder import is_scene_file
-    scene_uris = [u for u in sorted(glob.glob(scenes_glob)) if is_scene_file(u)]
+    # 2) Escenas a clasificar: 1 por fecha (scene_index colapsa fecha→uri); --limit opcional
+    uris = [u for u in sorted(glob.glob(scenes_glob)) if is_scene_file(u)]
+    by_iso = scene_index_from_uris(uris)            # "YYYY-MM-DD" -> uri
+    scenes = {iso.replace("-", ""): uri for iso, uri in by_iso.items()}  # contrato usa {date}=YYYYMMDD
     if args.limit:
-        scene_uris = scene_uris[: int(args.limit)]
-    print(f"Clasificando {len(scene_uris)} escena(s) con índices {indices or '(ninguno)'}")
+        scenes = dict(sorted(scenes.items())[: int(args.limit)])
+    print(f"Clasificando {len(scenes)} fecha(s) con índices {indices or '(ninguno)'}")
 
-    # 3) Entrenar 3 clasificadores y correr el batch
+    # 3) Entrenar 3 clasificadores y correr el batch (escribe en el esquema de carpetas)
     svc = di.build_batch_classify_service(s, ts.df, indices=indices)
-    result = svc.run(scene_uris, di.resolve_classes(s), out_root)
-    print(f"Listo: {len(result.scenes)} escena(s) OK → {out_root}")
+    result = svc.run(scenes, di.resolve_classes(s))
+    print(f"Listo: {len(result.scenes)} fecha(s) OK")
     if result.failed:
         print(f"Fallidas: {len(result.failed)} (se omitieron)")
-        for scene_id, msg in result.failed[:5]:
-            print(f"  {scene_id}: {msg[:80]}")
-    print(f"Resumen: {out_root / '_summary'}/counts.csv, agreement.csv")
+        for date, msg in result.failed[:5]:
+            print(f"  {date}: {msg[:80]}")
+    print(f"  CLASSMAP → {s.out_path('classmap', date='{date}', classifier='{clf}').parent.parent}")
+    print(f"  VIS      → {s.out_path('classmap_vis', date='{date}', classifier='{clf}').parent.parent}")
+    print(f"  ANÁLISIS → {s.out_path('compare_summary', name='counts').parent}")
     return 0
 
 
@@ -293,7 +305,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     pcb.add_argument("--geojson", required=True, help="GeoJSON v7 con puntos UTM (UTM_E,UTM_N,Ng,Fecha)")
     pcb.add_argument("--scenes-glob", required=True, help="glob de escenas multibanda (relativo a --root o absoluto)")
-    pcb.add_argument("--out", default="03-Products/CLASSMAP-COMPARE", help="carpeta de salida (rel a --root o absoluta)")
     pcb.add_argument("--indices", default="", help="índices separados por coma, p.ej. NDVI,NDWI,MNDWI,NDBI,BSI")
     pcb.add_argument("--limit", type=int, default=None, help="clasificar solo las primeras N escenas (smoke)")
     pcb.set_defaults(func=cmd_classify_batch)

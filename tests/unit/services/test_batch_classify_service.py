@@ -1,4 +1,4 @@
-"""Unit tests para BatchClassifyService (sin I/O raster real; PNG/CSV en tmp_path)."""
+"""Unit tests para BatchClassifyService (resolvers inyectados; PNG/CSV en tmp_path)."""
 import numpy as np
 import pytest
 
@@ -9,9 +9,6 @@ from satplatform.services.batch_classify_service import (
     BatchClassifyService,
     ClassifierSpec,
 )
-
-_BAND_ORDER = ("B01", "B02", "B03", "B04", "B05", "B06",
-               "B07", "B08", "B8A", "B09", "B11", "B12")
 
 
 def _profile(h=4, w=4):
@@ -35,8 +32,6 @@ class _FakeReader:
 
 
 class _FakeClassifier:
-    """Devuelve labels constantes = value; cuenta llamadas a predict/fit."""
-
     def __init__(self, value):
         self.value = value
         self.predict_calls = 0
@@ -65,88 +60,79 @@ class _FakeWriter:
         return uri
 
 
-def _service():
+def _service(root, classifiers=None):
+    """Resolvers que reproducen el layout del contrato dentro de tmp_path."""
     return BatchClassifyService(
         reader=_FakeReader(),
         writer=_FakeWriter(),
         cmapper=_FakeCmapper(),
-        classifiers=(
+        classifiers=classifiers or (
             ClassifierSpec("maha", _FakeClassifier(1)),
             ClassifierSpec("cos", _FakeClassifier(1)),
             ClassifierSpec("euc", _FakeClassifier(2)),
         ),
+        classmap_path=lambda d, c: root / "03-Products" / "CLASSMAP" / d / f"classmap_{c}.tif",
+        vis_path=lambda d, c: root / "03-Products" / "VIS" / d / f"classmap_{c}.png",
+        summary_path=lambda name: root / "04-Analysis" / "CLASSMAP-COMPARE" / f"{name}.csv",
     )
 
 
 class TestRun:
-    def test_writes_tif_and_png_per_classifier(self, tmp_path):
-        svc = _service()
-        svc.run(["/x/SCENE_A.tif"], _classes(), tmp_path)
-        # 3 tif vía writer
-        assert len(svc.writer.writes) == 3
-        assert {p.split("/")[-1] for p in svc.writer.writes} == {
-            "classmap_maha.tif", "classmap_cos.tif", "classmap_euc.tif"
-        }
-        # 3 png en disco
-        d = tmp_path / "SCENE_A"
+    def test_writes_tif_and_png_in_schema(self, tmp_path):
+        svc = _service(tmp_path)
+        svc.run({"20240123": "/x/SCENE_A.tif"}, _classes())
+        # tif vía writer en CLASSMAP/{date}/classmap_{clf}.tif
+        assert sorted(p.replace(str(tmp_path), "") for p in svc.writer.writes) == [
+            "/03-Products/CLASSMAP/20240123/classmap_cos.tif",
+            "/03-Products/CLASSMAP/20240123/classmap_euc.tif",
+            "/03-Products/CLASSMAP/20240123/classmap_maha.tif",
+        ]
+        # png en VIS/{date}/
         for key in ("maha", "cos", "euc"):
-            assert (d / f"classmap_{key}.png").exists()
+            assert (tmp_path / "03-Products" / "VIS" / "20240123" / f"classmap_{key}.png").exists()
 
-    def test_agreement(self, tmp_path):
-        svc = _service()
-        res = svc.run(["/x/SCENE_A.tif"], _classes(), tmp_path)
+    def test_scene_result_keyed_by_date(self, tmp_path):
+        svc = _service(tmp_path)
+        res = svc.run({"20240123": "/x/A.tif"}, _classes())
+        assert res.scenes[0].date == "20240123"
+
+    def test_agreement_and_counts(self, tmp_path):
+        svc = _service(tmp_path)
+        res = svc.run({"20240123": "/x/A.tif"}, _classes())
         agr = res.scenes[0].agreement
-        assert agr["cos-maha"] == pytest.approx(100.0)   # ambos = 1
-        assert agr["euc-maha"] == pytest.approx(0.0)      # 2 vs 1
-        assert agr["cos-euc"] == pytest.approx(0.0)
-
-    def test_counts(self, tmp_path):
-        svc = _service()
-        res = svc.run(["/x/SCENE_A.tif"], _classes(), tmp_path)
-        counts = res.scenes[0].counts_by_classifier
-        assert counts["maha"] == {1: 16}   # 4×4 todo clase 1
-        assert counts["euc"] == {2: 16}
+        assert agr["cos-maha"] == pytest.approx(100.0)
+        assert agr["euc-maha"] == pytest.approx(0.0)
+        assert res.scenes[0].counts_by_classifier["maha"] == {1: 16}
 
     def test_no_refit_per_scene(self, tmp_path):
-        """Los clasificadores llegan entrenados: predict 1×/escena, sin reentrenar."""
-        svc = _service()
-        svc.run(["/x/A.tif", "/x/B.tif"], _classes(), tmp_path)
+        svc = _service(tmp_path)
+        svc.run({"20240123": "/x/A.tif", "20240128": "/x/B.tif"}, _classes())
         for spec in svc.classifiers:
-            assert spec.adapter.predict_calls == 2  # 2 escenas
+            assert spec.adapter.predict_calls == 2
 
-    def test_summary_csvs_written(self, tmp_path):
-        svc = _service()
-        svc.run(["/x/A.tif", "/x/B.tif"], _classes(), tmp_path)
-        assert (tmp_path / "_summary" / "counts.csv").exists()
-        assert (tmp_path / "_summary" / "agreement.csv").exists()
-
-
-class _FailingClassifier:
-    """Levanta excepción en predict, para probar robustez por escena."""
-    def predict(self, bandset, *, calibration_id=None):
-        raise RuntimeError("no recognized as raster")
+    def test_summary_csvs_in_analysis(self, tmp_path):
+        svc = _service(tmp_path)
+        svc.run({"20240123": "/x/A.tif"}, _classes())
+        base = tmp_path / "04-Analysis" / "CLASSMAP-COMPARE"
+        assert (base / "counts.csv").exists()
+        assert (base / "agreement.csv").exists()
 
 
 class TestRobustness:
     def test_failing_scene_is_skipped_not_aborted(self, tmp_path):
-        from satplatform.services.batch_classify_service import BatchClassifyService, ClassifierSpec
-        # primer clasificador OK, pero usamos un reader que falla en una escena:
-        class _ReaderFailsOnB(_FakeReader):
+        class _ReaderFailsOnBad(_FakeReader):
             def read(self, uri, band_index=None):
                 if "BAD" in uri:
                     raise RuntimeError("not recognized as being in a supported file format")
                 return super().read(uri, band_index)
 
-        svc = BatchClassifyService(
-            reader=_ReaderFailsOnB(),
-            writer=_FakeWriter(),
-            cmapper=_FakeCmapper(),
-            classifiers=(ClassifierSpec("maha", _FakeClassifier(1)),),
+        svc = _service(tmp_path, classifiers=(ClassifierSpec("maha", _FakeClassifier(1)),))
+        svc.reader = _ReaderFailsOnBad()
+        res = svc.run(
+            {"20240103": "/x/GOOD_A.tif", "20240108": "/x/BAD_B.tif", "20240113": "/x/GOOD_C.tif"},
+            _classes(),
         )
-        res = svc.run(["/x/GOOD_A.tif", "/x/BAD_B.tif", "/x/GOOD_C.tif"], _classes(), tmp_path)
-        # 2 OK, 1 fallida — el batch no aborta
         assert len(res.scenes) == 2
         assert len(res.failed) == 1
-        assert res.failed[0][0] == "BAD_B"
-        # summary igual se escribe
-        assert (tmp_path / "_summary" / "counts.csv").exists()
+        assert res.failed[0][0] == "20240108"
+        assert (tmp_path / "04-Analysis" / "CLASSMAP-COMPARE" / "counts.csv").exists()

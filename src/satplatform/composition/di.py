@@ -343,6 +343,10 @@ def build_batch_classify_service(
             ClassifierSpec("cos", cos),
             ClassifierSpec("euc", euc),
         ),
+        # Resolvers de ruta desde el contrato output_patterns (services no usan Settings).
+        classmap_path=lambda d, c: settings.out_path("classmap", date=d, classifier=c),
+        vis_path=lambda d, c: settings.out_path("classmap_vis", date=d, classifier=c),
+        summary_path=lambda name: settings.out_path("compare_summary", name=name),
     )
 
 

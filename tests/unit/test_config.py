@@ -12,12 +12,21 @@ def test_settings_parse_and_paths(tmp_path: Path):
     assert isinstance(s.crs_out_ref(), CRSRef)
     assert s.crs_out_ref().epsg == 32719
     assert s.work_roi_dir.is_absolute()
-    p = s.out_path("stack", date="2025-01-01")
+    p = s.out_path("classmap", date="2025-01-01", classifier="maha")
     assert tmp_path in p.parents
 
 def test_settings_placeholders_guard():
     with pytest.raises(ValueError):
-        Settings(output_patterns={"stack": "artifacts/{site}/x.tif"})
+        Settings(output_patterns={"classmap": "artifacts/{site}/x.tif"})
+
+def test_out_path_classmap_layout(tmp_path: Path):
+    s = Settings(project_root=tmp_path, crs_out="EPSG:32719")
+    out = s.out_path("classmap", date="20240123", classifier="maha")
+    assert str(out).replace("\\", "/").endswith("03-Products/CLASSMAP/20240123/classmap_maha.tif")
+    vis = s.out_path("classmap_vis", date="20240123", classifier="cos")
+    assert str(vis).replace("\\", "/").endswith("03-Products/VIS/20240123/classmap_cos.png")
+    summ = s.out_path("compare_summary", name="counts")
+    assert str(summ).replace("\\", "/").endswith("04-Analysis/CLASSMAP-COMPARE/counts.csv")
 
 def test_build_settings_from_yaml(tmp_path: Path):
     cfg_dir = tmp_path / "00-Config"
@@ -39,14 +48,14 @@ def test_build_settings_from_yaml(tmp_path: Path):
             "roi_file": "00-Config/roi_master.geojson"
         },
         "output_patterns": {
-            "stack": "02-Work/STACK/{date}/stack.tif",
-            "hist_norm": "02-Work/HIST-NORM/{date}/hn.tif",
-            "classmap": "03-Products/CLASSMAP/{date}/classmap.tif"
+            "classmap": "03-Products/CLASSMAP/{date}/classmap_{classifier}.tif",
+            "classmap_vis": "03-Products/VIS/{date}/classmap_{classifier}.png",
+            "compare_summary": "04-Analysis/CLASSMAP-COMPARE/{name}.csv"
         }
     }), encoding="utf-8")
 
     st = build_settings(tmp_path)
     assert st.project_root == tmp_path.resolve()
-    out = st.out_path("stack", date="20250101")
-    assert out.name == "stack.tif"
-    assert "02-Work/STACK/20250101" in str(out).replace("\\", "/")
+    out = st.out_path("classmap", date="20250101", classifier="maha")
+    assert out.name == "classmap_maha.tif"
+    assert "03-Products/CLASSMAP/20250101" in str(out).replace("\\", "/")
