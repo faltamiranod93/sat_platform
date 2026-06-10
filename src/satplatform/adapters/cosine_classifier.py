@@ -14,6 +14,7 @@ import pandas as pd
 from ..contracts.core import ClassLabel
 from ..contracts.geo import GeoProfile, GeoRaster
 from ..contracts.products import BandSet
+from ..services.feature_service import FeatureService
 
 
 @dataclass
@@ -27,6 +28,7 @@ class CosineClassifierAdapter:
     _include_hsl: bool
     _two_stage: bool
     _stage2_class_ids: tuple[int, ...]
+    _indices: tuple[str, ...] = ()
 
     @classmethod
     def fit(
@@ -37,16 +39,18 @@ class CosineClassifierAdapter:
         include_hsl: bool = True,
         two_stage: bool = False,
         stage2_class_ids: Sequence[int] = (3, 4, 5),
+        indices: Sequence[str] = (),
         hsl_scale: float = 10000.0,
     ) -> "CosineClassifierAdapter":
         """Calcula vectores de referencia por clase desde el DataFrame Mcal."""
-        feature_cols = list(band_filter) + (["H", "S", "L"] if include_hsl else [])
-        ref_raw = np.zeros((len(classes), len(feature_cols)), dtype=np.float32)
+        feat = FeatureService()
+        X_all, names = feat.from_dataframe(mcal_df, band_filter, include_hsl, indices)
+        ng = mcal_df["Ng"].to_numpy()
+        ref_raw = np.zeros((len(classes), len(names)), dtype=np.float32)
 
         for i, cls_label in enumerate(classes):
-            mask = mcal_df["Ng"] == cls_label.id
-            X = mcal_df.loc[mask, feature_cols].values.astype(np.float32)
-            ref_raw[i] = X.mean(axis=0) if len(X) else np.zeros(len(feature_cols))
+            X = X_all[ng == cls_label.id]
+            ref_raw[i] = X.mean(axis=0) if len(X) else np.zeros(len(names))
 
         norms = np.linalg.norm(ref_raw, axis=1, keepdims=True) + 1e-12
         ref_normalized = (ref_raw / norms).astype(np.float32)
@@ -59,14 +63,15 @@ class CosineClassifierAdapter:
             _include_hsl=include_hsl,
             _two_stage=two_stage,
             _stage2_class_ids=tuple(stage2_class_ids),
+            _indices=tuple(indices),
         )
 
     def _build_features(self, bands: BandSet) -> tuple[np.ndarray, int, int]:
         """Devuelve (X: (N, F), H, W)."""
-        available = [b for b in self._band_filter if b in bands.bands]  # type: ignore[operator]
-        stacked = bands.stack(available)  # type: ignore[arg-type]
-        n_bands, H, W = stacked.data.shape
-        X = stacked.data.reshape(n_bands, H * W).T.astype(np.float32)
+        feat = FeatureService()
+        X, _ = feat.from_bandset(bands, self._band_filter, self._include_hsl, self._indices)
+        first = next(iter(bands.bands.values()))  # type: ignore[arg-type]
+        H, W = first.profile.height, first.profile.width
         return X, H, W
 
     def predict(self, bands: BandSet, *, calibration_id: Optional[str] = None) -> GeoRaster:

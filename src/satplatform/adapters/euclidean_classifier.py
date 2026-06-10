@@ -13,6 +13,7 @@ import pandas as pd
 from ..contracts.core import ClassLabel
 from ..contracts.geo import GeoProfile, GeoRaster
 from ..contracts.products import BandSet
+from ..services.feature_service import FeatureService
 
 
 @dataclass
@@ -23,6 +24,7 @@ class EuclideanClassifierAdapter:
     _reference: np.ndarray   # (Ng, F) vectores de referencia
     _band_filter: tuple[str, ...]
     _include_hsl: bool
+    _indices: tuple[str, ...] = ()
 
     @classmethod
     def fit(
@@ -31,28 +33,31 @@ class EuclideanClassifierAdapter:
         classes: Sequence[ClassLabel],
         band_filter: Sequence[str],
         include_hsl: bool = True,
+        indices: Sequence[str] = (),
     ) -> "EuclideanClassifierAdapter":
         """Calcula centroides por clase desde el DataFrame Mcal."""
-        feature_cols = list(band_filter) + (["H", "S", "L"] if include_hsl else [])
-        ref = np.zeros((len(classes), len(feature_cols)), dtype=np.float32)
+        feat = FeatureService()
+        X_all, names = feat.from_dataframe(mcal_df, band_filter, include_hsl, indices)
+        ng = mcal_df["Ng"].to_numpy()
+        ref = np.zeros((len(classes), len(names)), dtype=np.float32)
 
         for i, cls_label in enumerate(classes):
-            mask = mcal_df["Ng"] == cls_label.id
-            X = mcal_df.loc[mask, feature_cols].values.astype(np.float32)
-            ref[i] = X.mean(axis=0) if len(X) else np.zeros(len(feature_cols))
+            X = X_all[ng == cls_label.id]
+            ref[i] = X.mean(axis=0) if len(X) else np.zeros(len(names))
 
         return cls(
             _classes=tuple(classes),
             _reference=ref,
             _band_filter=tuple(band_filter),
             _include_hsl=include_hsl,
+            _indices=tuple(indices),
         )
 
     def predict(self, bands: BandSet, *, calibration_id: Optional[str] = None) -> GeoRaster:
-        available = [b for b in self._band_filter if b in bands.bands]  # type: ignore[operator]
-        stacked = bands.stack(available)  # type: ignore[arg-type]
-        n_bands, H, W = stacked.data.shape
-        X = stacked.data.reshape(n_bands, H * W).T.astype(np.float32)
+        feat = FeatureService()
+        X, _ = feat.from_bandset(bands, self._band_filter, self._include_hsl, self._indices)
+        first = next(iter(bands.bands.values()))  # type: ignore[arg-type]
+        H, W = first.profile.height, first.profile.width
 
         # d2[n, g] = ||X[n] - ref[g]||²
         d2 = np.stack([
@@ -64,7 +69,7 @@ class EuclideanClassifierAdapter:
         class_ids = np.array([c.id for c in self._classes], dtype=np.int16)
         label_arr = class_ids[best_idx].reshape(H, W)
 
-        p0 = stacked.profile
+        p0 = first.profile
         return GeoRaster(
             data=label_arr,
             profile=GeoProfile(

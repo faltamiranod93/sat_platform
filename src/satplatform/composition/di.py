@@ -74,9 +74,21 @@ def resolve_classes(settings: Settings) -> tuple[ClassLabel, ...]:
 # Adapters base (sin dependencia de Settings)
 # ---------------------------------------------------------------------------
 
-def build_raster_reader():
+def build_raster_reader(*, fix_georef: bool = False, target_epsg: int = 32719):
+    """Lector de raster. Con fix_georef=True lo envuelve en el decorator que
+    corrige al vuelo la georef geográfica-mal-etiquetada → UTM (escenas Sentinel
+    Hub). Default False para no alterar a los consumidores existentes.
+    """
     from ..adapters.gdal_raster_reader import GdalRasterReader
-    return GdalRasterReader()
+    base = GdalRasterReader()
+    if not fix_georef:
+        return base
+    from ..adapters.georef_fixing_raster_reader import GeorefFixingRasterReader
+    return GeorefFixingRasterReader(
+        base=base,
+        fix_service=build_georef_fix_service(),
+        target_epsg=target_epsg,
+    )
 
 
 def build_raster_writer():
@@ -276,6 +288,64 @@ def build_georef_fix_service():
     return GeorefFixService(crs_transform=build_crs_transform())
 
 
+def build_training_set(
+    geojson_path: Path,
+    scenes_glob: str,
+    *,
+    target_epsg: int = 32719,
+):
+    """Construye el training set por match fecha+ubicación.
+
+    Re-extrae las bandas de las escenas (georef corregida al vuelo) en los puntos
+    UTM del GeoJSON v7. Devuelve un TrainingSetResult (df + resumen used/omitted).
+    """
+    import glob as _glob
+    from ..services.training_set_builder import TrainingSetBuilder, scene_index_from_uris
+
+    reader = build_raster_reader(fix_georef=True, target_epsg=target_epsg)
+    scene_uris = sorted(_glob.glob(scenes_glob))
+    scene_index = scene_index_from_uris(scene_uris)
+    builder = TrainingSetBuilder(reader=reader)
+    return builder.build(geojson_path, scene_index)
+
+
+def build_batch_classify_service(
+    settings: "Settings",
+    train_df,
+    *,
+    indices: "tuple[str, ...]" = (),
+    target_epsg: int = 32719,
+):
+    """Entrena los 3 clasificadores (Mahalanobis/Cosine/Euclidean) desde el
+    train_df y arma el BatchClassifyService con el reader decorado.
+    """
+    from ..adapters.mahalanobis_classifier import MahalanobisClassifierAdapter, DEFAULT_BAND_FILTER
+    from ..adapters.cosine_classifier import CosineClassifierAdapter
+    from ..adapters.euclidean_classifier import EuclideanClassifierAdapter
+    from ..services.batch_classify_service import BatchClassifyService, ClassifierSpec
+
+    classes = resolve_classes(settings)
+    maha = MahalanobisClassifierAdapter.fit(
+        train_df, classes, include_hsl=True, indices=indices
+    )
+    cos = CosineClassifierAdapter.fit(
+        train_df, classes, band_filter=DEFAULT_BAND_FILTER, include_hsl=False, indices=indices
+    )
+    euc = EuclideanClassifierAdapter.fit(
+        train_df, classes, band_filter=DEFAULT_BAND_FILTER, include_hsl=False, indices=indices
+    )
+    return BatchClassifyService(
+        reader=build_raster_reader(fix_georef=True, target_epsg=target_epsg),
+        writer=build_raster_writer(),
+        cmapper=build_class_mapper(),
+        classifiers=(
+            ClassifierSpec("maha", maha),
+            ClassifierSpec("cos", cos),
+            ClassifierSpec("euc", euc),
+        ),
+    )
+
+
 __all__ = [
     # Settings helpers
     "load_settings_from_yaml",
@@ -304,4 +374,6 @@ __all__ = [
     "build_mcal_georef_service",
     "build_crs_transform",
     "build_georef_fix_service",
+    "build_training_set",
+    "build_batch_classify_service",
 ]

@@ -196,6 +196,50 @@ def cmd_classify(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_classify_batch(args: argparse.Namespace) -> int:
+    import glob
+    import logging
+
+    indices = tuple(x.strip().upper() for x in args.indices.split(",") if x.strip()) if args.indices else ()
+
+    root = Path(args.root).resolve() if args.root else Path.cwd()
+    s = di.build_settings(root).model_copy(update={"project_root": root})
+    geojson = Path(args.geojson)
+    scenes_glob = args.scenes_glob if Path(args.scenes_glob).is_absolute() else str(root / args.scenes_glob)
+    out_root = Path(args.out) if Path(args.out).is_absolute() else root / args.out
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    # 1) Training set por match fecha+ubicación
+    ts = di.build_training_set(geojson, scenes_glob)
+    print(f"Training: {ts.n_used} muestras usadas, {ts.n_omitted} omitidas")
+    for fecha, n in sorted(ts.used_by_date.items()):
+        print(f"  usado   {fecha}: {n}")
+    for fecha, n in sorted(ts.omitted_by_date.items()):
+        print(f"  omitido {fecha}: {n} (sin escena)")
+    if ts.n_used == 0:
+        print("[ERROR] No hay muestras de entrenamiento (ninguna fecha con escena).", file=sys.stderr)
+        return 1
+
+    # 2) Escenas a clasificar (filtra sidecars .aux.xml/.xml; --limit opcional)
+    from .services.training_set_builder import is_scene_file
+    scene_uris = [u for u in sorted(glob.glob(scenes_glob)) if is_scene_file(u)]
+    if args.limit:
+        scene_uris = scene_uris[: int(args.limit)]
+    print(f"Clasificando {len(scene_uris)} escena(s) con índices {indices or '(ninguno)'}")
+
+    # 3) Entrenar 3 clasificadores y correr el batch
+    svc = di.build_batch_classify_service(s, ts.df, indices=indices)
+    result = svc.run(scene_uris, di.resolve_classes(s), out_root)
+    print(f"Listo: {len(result.scenes)} escena(s) OK → {out_root}")
+    if result.failed:
+        print(f"Fallidas: {len(result.failed)} (se omitieron)")
+        for scene_id, msg in result.failed[:5]:
+            print(f"  {scene_id}: {msg[:80]}")
+    print(f"Resumen: {out_root / '_summary'}/counts.csv, agreement.csv")
+    return 0
+
+
 def _resolution_from_profile(p) -> int:
     px, py = p.pixel_size()
     gsd = min(abs(px), abs(py))
@@ -242,6 +286,17 @@ def _build_parser() -> argparse.ArgumentParser:
     pc.add_argument("--png", action="store_true", help="exporta quicklook PNG junto al TIFF")
     pc.add_argument("--gdalwarp", help="ruta a gdalwarp (si no está en PATH)")
     pc.set_defaults(func=cmd_classify)
+
+    pcb = sub.add_parser(
+        "classify-batch",
+        help="entrena 3 clasificadores desde el GeoJSON (match fecha+ubicación) y clasifica N escenas comparándolos",
+    )
+    pcb.add_argument("--geojson", required=True, help="GeoJSON v7 con puntos UTM (UTM_E,UTM_N,Ng,Fecha)")
+    pcb.add_argument("--scenes-glob", required=True, help="glob de escenas multibanda (relativo a --root o absoluto)")
+    pcb.add_argument("--out", default="03-Products/CLASSMAP-COMPARE", help="carpeta de salida (rel a --root o absoluta)")
+    pcb.add_argument("--indices", default="", help="índices separados por coma, p.ej. NDVI,NDWI,MNDWI,NDBI,BSI")
+    pcb.add_argument("--limit", type=int, default=None, help="clasificar solo las primeras N escenas (smoke)")
+    pcb.set_defaults(func=cmd_classify_batch)
 
     return p
 

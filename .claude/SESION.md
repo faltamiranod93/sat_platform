@@ -7,22 +7,19 @@
 ---
 
 ## Última sesión activa
-**Fecha:** 2026-06-08
+**Fecha:** 2026-06-09
 **Computador:** universidad (geotecnia-usm)
 
 ## Qué se hizo
-- **Bloqueador resuelto.** El GeoJSON Mcal v7 SÍ está bien (EPSG:32719). El bug era la georref de los TIFFs Sentinel Hub: declaran 4326/geográfico con origen lon/lat pero píxel métrico 10 m — en realidad UTM 19S. Por eso `extract_at_utm_points` daba 0/552 puntos.
-- **Nuevo: `GeorefFixService`** (commit `a0c2a1b`): port `CrsTransformPort` + adapter `PyprojCrsTransform` + servicio puro `needs_fix()/fix()` (origen lon/lat→UTM, reescribe CRS). Cableado en di. `pyproj>=3.5` a deps core. Suite **99/99** (14 tests nuevos).
-- **Verificado end-to-end**: escena `20240123` corregida → origen E=479556 N=7306103, los 552 puntos caen dentro. TIFF + GeoJSON de puntos escritos en `01-Laguna-Seca-example/04-Analysis/georef_fix_verify/` (fuera del repo) para abrir en QGIS. Confirmado con gdalinfo/ogrinfo.
-- Skills `/inicio` `/fin` `/sync` reparadas a formato directorio/SKILL.md (commit `1c8ae2c`).
-- Instalado en .venv: `pyproj`, `rasterio` (este último ya era backend opcional `raster`).
+- **Pipeline batch end-to-end implementado** (plan de 7 fases, suite 99→**133 verde**). Nuevos servicios/adapters: `GeorefFixingRasterReader` (georef al vuelo, opt-in), `multiband_loader`, `FeatureService` (HSL + índices NDVI/NDWI/MNDWI/NDBI/NDSI/BSI, consistente train↔predict), `TrainingSetBuilder` (match fecha+ubicación), `BatchClassifyService` (robusto por escena). Refactor de los 3 clasificadores a FeatureService. Subcomando CLI `classify-batch`. Fix de georef en origen en `s_sen2_down_v3.py`.
+- **Corrida real**: 234/236 escenas (2023-2025) clasificadas con 3 clasificadores, entrenando con 552 pts del 2024-01-23. Salida en `01-Laguna-Seca-example/03-Products/CLASSMAP-COMPARE` (356 MB, fuera del repo). Verificado en QGIS que la georef corregida cae en Laguna Seca.
+- **Hallazgo de resultados**: clasificación sesgada (Mahalanobis 71% en "terreno sombreado", acuerdo entre clasificadores 39-49%) — efecto de entrenar con 1 sola fecha.
 
 ## Próximo paso inmediato
-Confirmar visualmente en QGIS que la escena corregida + los 552 puntos caen sobre Laguna Seca; luego crear la **orquestación batch** que aplique `GeorefFixService` a las 320 escenas de `01-Raw/s2` (leer perfil → fix → reescribir TIFF con rasterio).
+Mejorar la calidad: descargar escenas de 2020-04-03/2021-04-28/2022-04-28 (fechas del GeoJSON) para training multitemporal (1721 pts), y añadir ROI + máscara de nubes.
 
 ## Pendiente / bloqueado
-- ⚠️ Merge con commit `4e7bfd6` del otro PC: `add_utm` ahora usa **centro de píxel** (+0.5) y `to_geojson` emite **CRS named OGC**. El GeoJSON v7 vigente se generó con esquina (offset 5 m) — **regenerarlo** con el código nuevo antes de extraer muestras definitivas. (3 tests se realinearon, suite 99/99.)
-- Batch de corrección de georef sobre las 320 escenas (2024–2026) + productos CLASSMAP derivados (heredan la georef rota).
-- Tras corregir: re-extraer muestras con `extract_at_utm_points` y validar valores de banda; recién ahí re-batch Mahalanobis v9p2 vs LegacyPixelClassifier (Paso 3 del plan post-pull, sigue pendiente).
-- Falencias del clasificador legacy sin atacar: nodata=Agua, sin ROI de Laguna Seca, sin máscara de nubes.
-- Migración `TemporalNormPort` + adapter (RRN multitemporal) pendiente.
+- Sin commitear: todo el código de esta sesión (5 archivos nuevos + ~8 modificados) está en el working tree.
+- Mejoras de clasificación: training 1-fecha → multitemporal; sin ROI (clasifica escena completa); sin máscara de nubes; revisar diag_reg del Mahalanobis; medir aporte real de índices (con/sin --indices); falta validación cuantitativa (train/test split de los 552 pts).
+- Geomembrana (clases 8/9) mapeada a macro RELAVE por defecto — confirmar semántica.
+- Migración `TemporalNormPort` + adapter (RRN multitemporal) sigue pendiente.

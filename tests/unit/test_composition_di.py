@@ -60,3 +60,36 @@ def test_pixel_classifier_uses_settings_classes(settings: Settings):
     classes = clf.classes()
     assert len(classes) == 3
     assert {c.id for c in classes} == {1, 2, 3}
+
+
+def test_build_raster_reader_fix_georef_wraps_decorator():
+    from satplatform.adapters.georef_fixing_raster_reader import GeorefFixingRasterReader
+    from satplatform.adapters.gdal_raster_reader import GdalRasterReader
+    plain = di.build_raster_reader()
+    fixing = di.build_raster_reader(fix_georef=True)
+    assert isinstance(plain, GdalRasterReader)
+    assert isinstance(fixing, GeorefFixingRasterReader)
+    assert isinstance(fixing.base, GdalRasterReader)
+    assert fixing.target_epsg == 32719
+
+
+def test_build_batch_classify_service_trains_three(settings: Settings):
+    import numpy as np
+    import pandas as pd
+    # train_df sintético con las 3 clases default y las 12 bandas
+    bands = ["B01", "B02", "B03", "B04", "B05", "B06",
+             "B07", "B08", "B8A", "B09", "B11", "B12"]
+    rng = np.random.default_rng(0)
+    rows = []
+    for ng, center in {1: 1000.0, 2: 5000.0, 3: 9000.0}.items():
+        for _ in range(10):
+            row = {"Ng": ng}
+            for b in bands:
+                row[b] = float(rng.normal(center, 30))
+            rows.append(row)
+    train_df = pd.DataFrame(rows)
+    svc = di.build_batch_classify_service(settings, train_df, indices=("NDVI",))
+    assert len(svc.classifiers) == 3
+    assert {c.key for c in svc.classifiers} == {"maha", "cos", "euc"}
+    from satplatform.adapters.georef_fixing_raster_reader import GeorefFixingRasterReader
+    assert isinstance(svc.reader, GeorefFixingRasterReader)
