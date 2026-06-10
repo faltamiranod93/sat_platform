@@ -16,6 +16,13 @@ import pandas as pd
 
 from .feature_service import FeatureService
 
+# Longitudes de onda centrales Sentinel-2 (nm) — de config_bandas_v3.json.
+S2_WAVELENGTHS_NM: dict[str, float] = {
+    "B01": 442.7, "B02": 492.4, "B03": 559.8, "B04": 664.6,
+    "B05": 704.1, "B06": 740.5, "B07": 782.8, "B08": 832.8,
+    "B8A": 864.7, "B09": 945.1, "B11": 1613.7, "B12": 2202.4,
+}
+
 
 @dataclass
 class SpectralSignatureService:

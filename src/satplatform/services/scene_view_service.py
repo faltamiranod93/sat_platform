@@ -60,6 +60,21 @@ class SceneViewService:
         out["row"] = rows
         return out
 
+    def colorize_labels(
+        self,
+        labels: np.ndarray,
+        palette: Dict[int, tuple[int, int, int]],
+        nodata: int = -9999,
+    ) -> np.ndarray:
+        """Convierte un raster de etiquetas (class_id) a RGB uint8 (H, W, 3) según paleta."""
+        h, w = labels.shape
+        rgb = np.zeros((h, w, 3), dtype=np.uint8)
+        for cid in np.unique(labels):
+            if int(cid) == nodata:
+                continue
+            rgb[labels == cid] = palette.get(int(cid), (0, 0, 0))
+        return rgb
+
     def pixel_signature(self, bandset: BandSet, col: float, row: float) -> Dict[str, float]:
         """Espectro de un píxel: {banda: valor}. Vacío si el píxel cae fuera."""
         ci, ri = int(round(col)), int(round(row))

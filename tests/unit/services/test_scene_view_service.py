@@ -52,6 +52,17 @@ class TestPointsToPixels:
         assert out["row"].iloc[0] == pytest.approx(0.5, abs=1e-6)
 
 
+class TestColorize:
+    def test_maps_ids_to_palette(self, svc):
+        labels = np.array([[1, 2], [2, -9999]], dtype=np.int16)
+        palette = {1: (10, 20, 30), 2: (200, 100, 50)}
+        rgb = svc.colorize_labels(labels, palette)
+        assert rgb.shape == (2, 2, 3)
+        assert tuple(rgb[0, 0]) == (10, 20, 30)
+        assert tuple(rgb[0, 1]) == (200, 100, 50)
+        assert tuple(rgb[1, 1]) == (0, 0, 0)   # nodata → negro
+
+
 class TestPixelSignature:
     def test_extracts_all_bands(self, svc):
         sig = svc.pixel_signature(_bandset(), col=2, row=2)
