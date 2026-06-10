@@ -35,6 +35,12 @@ dependencies = [
 raster = [
     "rasterio>=1.3",
 ]
+# Herramienta interactiva de exploración de firmas (tools/spectral_explorer)
+viz = [
+    "streamlit>=1.40",
+    "plotly>=5.24",
+    "streamlit-image-coordinates>=0.1",
+]
 # Suite de tests
 tests = [
     "pytest>=8.0",
