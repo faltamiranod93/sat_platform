@@ -67,6 +67,14 @@ Sobreescribe `sat-platform/.claude/SESION.md` con este formato exacto:
 
 ---
 
+## Paso 3.5 — Actualizar el Atlas (si la sesión movió una arista)
+
+El **Atlas** (`sat-platform/.claude/ATLAS.md` + espejo `md-faltamirano/ATLAS.md` + memoria `project-atlas-msc`) es el mapa estratégico de las 3 aristas (completar desarrollos / validar resultados / plan tesis). `SESION.md` es táctico; el atlas es estratégico.
+
+Evalúa: ¿esta sesión **cerró un hito** o cambió el rumbo de alguna arista (no solo avance táctico)? Si es así, ejecuta la lógica de la skill `/atlas`: reescribe el "Estado actual" de la arista afectada, marca ítems del roadmap de la Arista 3 si corresponde, agrega una entrada al historial con la fecha de hoy, y deja las 3 copias del atlas idénticas. Si la sesión fue solo avance táctico, deja el atlas como está (basta SESION.md).
+
+---
+
 ## Paso 4 — Verificar cambios locales sin commitear
 
 Corre:
@@ -85,7 +93,7 @@ git commit -m "<mensaje descriptivo>"
 git push origin main
 ```
 
-Si SESION.md fue actualizado, siempre incluirlo en el commit.
+Si SESION.md o `sat-platform/.claude/ATLAS.md` fueron actualizados, siempre incluirlos en el commit.
 
 ---
 

@@ -24,18 +24,21 @@ Informa brevemente:
 ## Paso 2 — Leer estado del proyecto
 
 Lee en este orden:
-1. `sat-platform/.claude/SESION.md` — breadcrumb de la última sesión (qué se hizo, próximo paso, bloqueados)
-2. `MEMORY.md` (índice de memorias locales)
-3. Cualquier archivo de memoria relevante que el índice señale
+1. `sat-platform/.claude/ATLAS.md` — el **Atlas** (mapa estratégico de las 3 aristas). Da el marco: dónde va la tesis y qué frente toca cada arista.
+2. `sat-platform/.claude/SESION.md` — breadcrumb de la última sesión (qué se hizo, próximo paso, bloqueados)
+3. `MEMORY.md` (índice de memorias locales)
+4. Cualquier archivo de memoria relevante que el índice señale
 
-La información de SESION.md tiene prioridad para el "pendiente prioritario" — es lo más fresco.
+El Atlas da la visión estratégica; SESION.md tiene prioridad para el "pendiente prioritario" — es lo más fresco.
 
 ## Paso 3 — Presentar resumen por líneas de trabajo
 
-Muestra un resumen estructurado con este formato exacto:
+Muestra un resumen estructurado con este formato exacto. Encabézalo con el panorama por **aristas** (del Atlas) y luego el detalle por línea:
 
 ---
 ### Estado del proyecto MSc-UTFSM — [fecha actual]
+
+**Aristas (Atlas):** 1) Completar desarrollos · 2) Validar resultados · 3) Plan tesis — [1 línea con en qué arista está el foco ahora]
 
 **sat-platform**
 [1–3 líneas sobre el último estado de la plataforma: qué adapters/services existen, qué está pendiente]

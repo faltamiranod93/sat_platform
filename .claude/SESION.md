@@ -7,20 +7,19 @@
 ---
 
 ## Última sesión activa
-**Fecha:** 2026-06-10
+**Fecha:** 2026-07-09
 **Computador:** universidad (geotecnia-usm)
 
 ## Qué se hizo
-- **classify-batch al esquema de carpetas estándar** (commit `ef8677e`): contrato `output_patterns` afinado (classmap/classmap_vis/features/compare_summary), salidas trazables por fecha en `03-Products/CLASSMAP/{date}/classmap_{clf}.tif`, `VIS/`, `04-Analysis/`. Servicio con resolvers inyectados; 1 salida por fecha.
-- **01-Raw reorganizado**: copiadas las 234 escenas de 01-Laguna-Seca a `01-Raw/{2023,2024,2025}/` (simula la nueva descarga); borrado CLASSMAP-COMPARE viejo.
-- **Corrida completa**: 231 fechas clasificadas en el esquema nuevo (380 MB en 03-Products/04-Analysis).
-- **Explorador de firmas Streamlit** (commit `d459c69` + mejoras sin commitear): reemplaza los `g_Sat_SpectralSignature_v*` PyQt5. `SpectralSignatureService` + `SceneViewService` (dominio puro), app con 3 tabs (firmas por escala bandas/HSL/índices, separabilidad heatmap+PCA, visor real vs 3 classmaps con clic). Firmas re-extraídas de escenas reales. Suite **151 verde**.
+- Sesión **organizativa** (no de código de la plataforma): montado el **sistema Atlas** — mapa estratégico de las 3 aristas (completar desarrollos / validar resultados / plan tesis).
+- Nuevos artefactos: `ATLAS.md` (3 copias sincronizadas: memoria oficial, `md-faltamirano/`, y esta copia git-trackeada), `CLAUDE.md` en la raíz del Msc, skill `/atlas`, enganche en `/inicio` y `/fin`.
+- Nuevas memorias: `project-geodata-inf491`, `project-laguna-seca-terreno` (carpetas nuevas `geodata/` y `Laguna-Seca Info/`), y `reference-skills-symlinks`.
+- Arreglados los symlinks rotos de skills en `~/.claude/skills` (`/inicio` daba "unknown command").
 
 ## Próximo paso inmediato
-Commitear las mejoras pendientes del explorador (scene_view/signature service + app), y usar la herramienta para decidir cómo mejorar la separabilidad terreno-natural (3) vs sombreado (11).
+Retomar la **Arista 1 (código)**: mejorar la separabilidad **clase 3 (terreno natural) vs 11 (sombreado)** usando el explorador Streamlit (ya commiteado, `d8c5ad8`).
 
 ## Pendiente / bloqueado
-- **Sin commitear**: mejoras del explorador (scene_view_service, spectral_signature_service, test, app.py) — 4 archivos.
-- Mejora de clasificación: las clases 3 y 11 son poco separables → sesgo del Mahalanobis (71% en sombreado). Opciones: más índices, training multitemporal (descargar 2020/2021/2022), o redefinir clases de terreno.
-- Falta validación cuantitativa (train/test split de los 552 pts) y materializar FEATURES/MASK (reservados en el contrato).
-- settings.yaml/class_labels.json del example y 01-Raw viven fuera del repo (no commiteados).
+- **Arista 3 (tesis):** roadmap creado pero vacío — bloqueado esperando que el usuario aporte **plazos, formato/plantilla y comité/profesor guía** del programa.
+- **Arista 2 (validación):** cruzar el "Espejo de Agua" batimétrico (enero 2024) con la superficie NDWI de la escena 2024-01-23; validación cuantitativa del clasificador (train/test de los 552 pts).
+- Materializar FEATURES/MASK (reservados en el contrato).
