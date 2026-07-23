@@ -21,7 +21,7 @@ Mapa **estratégico** de todo `~/Documents/Msc-sentinel2/`, organizado en **tres
 
 ---
 
-## Arista 1 — Completar los desarrollos
+## Arista 1 — Plataforma y procesamiento
 **Qué es:** terminar la plataforma `sat_platform` y el procesamiento de Laguna Seca.
 **Enlaces:** [[project-sat-platform]] · `sat_platform/.claude/SESION.md` (estado vigente) · [[laguna-mcal-v7-taxonomy]] · [[laguna-mcal-grid-mismatch]]
 
@@ -35,7 +35,7 @@ Mapa **estratégico** de todo `~/Documents/Msc-sentinel2/`, organizado en **tres
 
 ---
 
-## Arista 2 — Validar los resultados
+## Arista 2 — Contraste satélite–terreno
 **Qué es:** contrastar la salida satelital (superficie NDWI, classmaps Mahalanobis) contra datos de terreno reales.
 **Enlaces:** [[project-laguna-seca-terreno]] (monitoreo Geomonitoring/BHP: batimetría AUV + clasificación GeoEye 7 clases + planillas TLS) · [[project-laguna-seca-findings]] ("Agua"=nodata, umbrales sin calibrar) · [[laguna-mcal-grid-mismatch]] (todo en UTM 19S)
 
@@ -51,7 +51,7 @@ Mapa **estratégico** de todo `~/Documents/Msc-sentinel2/`, organizado en **tres
 
 ---
 
-## Arista 3 — Plan para finalizar la tesis
+## Arista 3 — Documento de tesis
 **Qué es:** roadmap para escribir y defender la tesis de magíster. **Parte desde cero** (no existe documento de tesis todavía).
 **Enlaces:** [[project-geodata-inf491]] (antecedente metodológico: GWR/LISA/SAR ya aplicados y defendidos) · literatura RRN/papers (por materializar; la skill `/inicio` referencia un `10 papers/` que aún no existe aquí).
 
@@ -70,6 +70,9 @@ Mapa **estratégico** de todo `~/Documents/Msc-sentinel2/`, organizado en **tres
 
 ## Historial
 _(la skill `/atlas` agrega aquí una entrada por sesión relevante; nunca borra entradas)_
+
+### 2026-07-22
+- **Renombradas las 3 aristas** para reflejar mejor lo que se hace: Arista 1 → *Plataforma y procesamiento*, Arista 2 → *Contraste satélite–terreno*, Arista 3 → *Documento de tesis*. Solo nomenclatura; sin cambios de alcance. Sincronizado en las 3 copias + `CLAUDE.md`.
 
 ### 2026-07-14
 - **Arista 2 reforzada:** documentado el monitoreo profesional de terreno (Geomonitoring/BHP) en `info Laguna-Seca/`. Hallazgo clave: el informe EB-03 (2019) hace clasificación satelital supervisada de 7 clases sobre GeoEye-1 (50 cm) → es el **benchmark comercial** de la tesis (Sentinel-2, 10 m). Reorganizada `Informes/` por fecha/servicio. Memoria [[project-laguna-seca-terreno]] ampliada.
