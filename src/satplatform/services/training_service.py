@@ -70,6 +70,11 @@ class TrainingService:
     def split(
         self, ds: TrainingDataset, train_ratio: float = 0.8, seed: int = 42
     ) -> tuple[TrainingDataset, TrainingDataset]:
+        """DEPRECATED (sin callers): split ALEATORIO — sesga la validación al inflar la
+        accuracy con muestras espacialmente agrupadas (Jocea 2025, +7 a +22 pp). Para
+        evaluación honesta usar el módulo de puntos `EvaluationService` (CV espacial +
+        TFC), que opera sobre el DataFrame Mcal con coords UTM y etiqueta por fecha.
+        """
         n = ds.X.shape[0]
         rng = np.random.default_rng(seed)
         idx = np.arange(n, dtype="int64")

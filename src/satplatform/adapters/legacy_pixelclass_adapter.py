@@ -30,6 +30,14 @@ class LegacyPixelClassifier(PixelClassifierPort):
     def classes(self) -> Sequence[ClassLabel]:
         return self.classes_def
 
+    def predict_points(self, df) -> "np.ndarray":  # noqa: F821
+        """No soportado: las reglas normalizan por percentil sobre la escena completa
+        (`_norm`), sin sentido a nivel de punto. Este clasificador no se usa en la
+        evaluación por puntos (TFC/CV); se define solo para conformar el Protocol."""
+        raise NotImplementedError(
+            "LegacyPixelClassifier no soporta predict_points (normalización por percentil de escena)."
+        )
+
     def predict(self, bands: BandSet, *, calibration_id: Optional[str] = None) -> GeoRaster:
         available = bands.names()
         required_candidates = ("B03", "B04", "B08", "B11")

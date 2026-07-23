@@ -350,6 +350,31 @@ def build_batch_classify_service(
     )
 
 
+def build_evaluation_service(seed: int = 42):
+    """EvaluationService es puro dominio (Milestone 1) — no requiere wiring."""
+    from ..services.evaluation_service import EvaluationService
+    return EvaluationService(seed=seed)
+
+
+def default_eval_configs(indices: "tuple[str, ...]" = ()):
+    """Configs de evaluación: Mahalanobis producción (B02–B12 + HSL) y ablación (sin HSL)."""
+    from ..services.evaluation_service import EvalConfig
+    from ..adapters.mahalanobis_classifier import (
+        MahalanobisClassifierAdapter,
+        DEFAULT_BAND_FILTER,
+    )
+
+    def _mk(include_hsl: bool):
+        def make(train_df, classes):
+            return MahalanobisClassifierAdapter.fit(
+                train_df, classes, band_filter=DEFAULT_BAND_FILTER,
+                include_hsl=include_hsl, indices=indices,
+            )
+        return make
+
+    return [EvalConfig("prod", _mk(True)), EvalConfig("ablation", _mk(False))]
+
+
 __all__ = [
     # Settings helpers
     "load_settings_from_yaml",
@@ -380,4 +405,6 @@ __all__ = [
     "build_georef_fix_service",
     "build_training_set",
     "build_batch_classify_service",
+    "build_evaluation_service",
+    "default_eval_configs",
 ]

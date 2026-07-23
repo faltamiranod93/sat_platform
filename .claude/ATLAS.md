@@ -23,15 +23,16 @@ Mapa **estratégico** de todo `~/Documents/Msc-sentinel2/`, organizado en **tres
 
 ## Arista 1 — Plataforma y procesamiento
 **Qué es:** terminar la plataforma `sat_platform` y el procesamiento de Laguna Seca.
-**Enlaces:** [[project-sat-platform]] · `sat_platform/.claude/SESION.md` (estado vigente) · [[laguna-mcal-v7-taxonomy]] · [[laguna-mcal-grid-mismatch]]
+**Enlaces:** [[project-sat-platform]] · `sat_platform/.claude/SESION.md` (estado vigente) · [[laguna-eval-m1-baseline]] · [[laguna-mcal-v7-taxonomy]] · [[laguna-mcal-grid-mismatch]]
 
-**Estado actual** (según SESION.md, 2026-06-10 — más fresco que la memoria de sat_platform):
-- Arquitectura hexagonal estable; `classify-batch` al esquema de carpetas estándar; **231 fechas clasificadas**; explorador de firmas Streamlit (firmas/separabilidad/visor). Suite **151 tests verde**.
+**Estado actual** (2026-07-22 — ver `sat_platform/.claude/SESION.md`):
+- Arquitectura hexagonal estable. **Milestone 1 (validación) implementado y ejecutado**: módulo de evaluación con CV espacial por bloques + TFC temporal (`evaluation_service`/`_folds`/`_metrics`), puerto con `predict_points`, subcomando CLI `evaluate`. Suite **186 tests verde**.
+- **Primer baseline honesto** (Laguna Seca 2024-01-23): la CV aleatoria inflaba la accuracy → gap OA +0.08, kappa 0.87→0.35 con bloqueo espacial; confusión dominante clase 3↔11. Ver [[laguna-eval-m1-baseline]].
 
 **Próximos pasos:**
-- Mejorar separabilidad **clase 3 (terreno natural) vs 11 (sombreado)** — Mahalanobis 71% en sombreado (más índices / training multitemporal / redefinir clases); usar el explorador Streamlit (ya commiteado, `d8c5ad8`) para decidir cómo.
-- Materializar FEATURES/MASK (reservados en el contrato).
-- Pendientes de plataforma (memoria vieja, reverificar): cobertura de `spectral_service.py`, Fase 5 (BSI/MNDWI/SAVI/EVI), Fase 7 (exporters), Fase 8 (CI/CD).
+- Correr **P2/P3 (TFC temporal)** con escenas 2020/21/22 (faltan en el ejemplo; existen en el GeoJSON v7).
+- **M2: portar el RRN legacy** a `TemporalNormPort/Adapter/Service` y medirlo con el hook `norm=` del evaluador (no-regresión à la Gan). Estrategia de ajuste diferida (legacy fiel / polígonos Chen / MSAC+Tukey Xu).
+- Separabilidad **clase 3 vs 11** sigue pendiente, ahora cuantificada por el evaluador. Materializar FEATURES/MASK.
 
 ---
 
@@ -72,6 +73,7 @@ Mapa **estratégico** de todo `~/Documents/Msc-sentinel2/`, organizado en **tres
 _(la skill `/atlas` agrega aquí una entrada por sesión relevante; nunca borra entradas)_
 
 ### 2026-07-22
+- **Arista 1 — Milestone 1 (validación) implementado y ejecutado.** Módulo de evaluación (CV espacial por bloques + TFC temporal), refactor del puerto con `predict_points`, CLI `evaluate`; **186 tests verde**. Primer baseline honesto en Laguna Seca 2024-01-23: la CV aleatoria inflaba (gap OA +0.08, kappa 0.87→0.35), confusión dominante clase 3↔11 (ver [[laguna-eval-m1-baseline]]). Precedido por el estudio a fondo de 9 papers en `literatura/INDEX.md` + roadmap A–E de la arista.
 - **Renombradas las 3 aristas** para reflejar mejor lo que se hace: Arista 1 → *Plataforma y procesamiento*, Arista 2 → *Contraste satélite–terreno*, Arista 3 → *Documento de tesis*. Solo nomenclatura; sin cambios de alcance. Sincronizado en las 3 copias + `CLAUDE.md`.
 
 ### 2026-07-14

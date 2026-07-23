@@ -252,6 +252,71 @@ def cmd_classify_batch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_evaluate(args: argparse.Namespace) -> int:
+    """Evalúa la clasificación con CV espacial (P0/P1) + TFC temporal (P2/P3)."""
+    import logging
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    root = Path(args.root).resolve() if args.root else Path.cwd()
+    s = di.build_settings(root).model_copy(update={"project_root": root})
+    geojson = Path(args.geojson)
+    scenes_glob = args.scenes_glob if Path(args.scenes_glob).is_absolute() else str(root / args.scenes_glob)
+    indices = tuple(x.strip().upper() for x in args.indices.split(",") if x.strip()) if args.indices else ()
+
+    # 1) Training set por match fecha+ubicación (mismas escenas que se clasifican)
+    ts = di.build_training_set(geojson, scenes_glob)
+    print(f"Muestras: {ts.n_used} usadas, {ts.n_omitted} omitidas")
+    for fecha, n in sorted(ts.used_by_date.items()):
+        print(f"  usado   {fecha}: {n}")
+    for fecha, n in sorted(ts.omitted_by_date.items()):
+        print(f"  omitido {fecha}: {n} (sin escena)")
+    if ts.n_used == 0:
+        print("[ERROR] No hay muestras (ninguna fecha con escena).", file=sys.stderr)
+        return 1
+
+    # 2) Catálogo de clases + configs (prod/ablation) filtradas por --configs
+    catalog = di.resolve_classes(s)
+    all_configs = di.default_eval_configs(indices=indices)
+    wanted = [c.strip() for c in args.configs.split(",") if c.strip()]
+    configs = [c for c in all_configs if c.name in wanted] or all_configs
+    protocols = tuple(p.strip() for p in args.protocols.split(",") if p.strip())
+
+    out_dir = Path(args.out_dir) if Path(args.out_dir).is_absolute() else (root / args.out_dir)
+
+    # 3) Ejecutar evaluación
+    svc = di.build_evaluation_service(seed=args.seed)
+    res = svc.evaluate(
+        ts.df, configs, catalog=catalog, protocols=protocols,
+        block_size_m=args.block_size_m, n_folds=args.folds, out_dir=out_dir,
+    )
+
+    print(f"\nblock_size_m (CV espacial): {res.block_size_m:.1f}")
+    for msg in res.skipped:
+        print(f"  [skip] {msg}")
+
+    # 4) Resumen agregado por config×protocolo (media de folds)
+    if not res.summary.empty:
+        agg = (
+            res.summary.groupby(["config", "protocol"])[["OA", "kappa", "F1_macro", "Q", "A"]]
+            .mean().reset_index()
+        )
+        print("\n== Resumen (media de folds) ==")
+        print(f"{'config':<9}{'proto':<7}{'OA':>7}{'kappa':>8}{'F1':>7}{'Q':>7}{'A':>7}")
+        for _, r in agg.iterrows():
+            print(f"{r['config']:<9}{r['protocol']:<7}{r['OA']:>7.3f}{r['kappa']:>8.3f}"
+                  f"{r['F1_macro']:>7.3f}{r['Q']:>7.3f}{r['A']:>7.3f}")
+        # Gap P0−P1 (sesgo del split aleatorio) si ambos existen
+        for cfg in agg["config"].unique():
+            sub = agg[agg["config"] == cfg]
+            p0 = sub[sub["protocol"] == "p0"]["OA"]
+            p1 = sub[sub["protocol"] == "p1"]["OA"]
+            if len(p0) and len(p1):
+                print(f"  gap OA P0−P1 [{cfg}]: {float(p0.iloc[0]) - float(p1.iloc[0]):+.3f} "
+                      f"(sesgo del split aleatorio)")
+    print(f"\nCSV → {out_dir}")
+    return 0
+
+
 def _resolution_from_profile(p) -> int:
     px, py = p.pixel_size()
     gsd = min(abs(px), abs(py))
@@ -308,6 +373,22 @@ def _build_parser() -> argparse.ArgumentParser:
     pcb.add_argument("--indices", default="", help="índices separados por coma, p.ej. NDVI,NDWI,MNDWI,NDBI,BSI")
     pcb.add_argument("--limit", type=int, default=None, help="clasificar solo las primeras N escenas (smoke)")
     pcb.set_defaults(func=cmd_classify_batch)
+
+    pev = sub.add_parser(
+        "evaluate",
+        help="evalúa la clasificación con CV espacial (P0/P1) + TFC temporal (P2/P3) y escribe CSV",
+    )
+    pev.add_argument("--geojson", required=True, help="GeoJSON v7 con puntos (UTM_E,UTM_N,Ng,Fecha)")
+    pev.add_argument("--scenes-glob", required=True, help="glob de escenas multibanda (rel a --root o absoluto)")
+    pev.add_argument("--out-dir", required=True, help="carpeta de salida para los CSV")
+    pev.add_argument("--block-size-m", type=float, default=None,
+                     help="tamaño de bloque (m) para la CV espacial; si se omite, se estima (Moran's I)")
+    pev.add_argument("--folds", type=int, default=5, help="nº de folds para P0/P1")
+    pev.add_argument("--protocols", default="p0,p1,p2,p3", help="protocolos separados por coma")
+    pev.add_argument("--configs", default="prod,ablation", help="configs de features: prod,ablation")
+    pev.add_argument("--indices", default="", help="índices espectrales extra, separados por coma")
+    pev.add_argument("--seed", type=int, default=42, help="semilla para los folds")
+    pev.set_defaults(func=cmd_evaluate)
 
     return p
 

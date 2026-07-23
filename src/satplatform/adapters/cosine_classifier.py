@@ -74,8 +74,8 @@ class CosineClassifierAdapter:
         H, W = first.profile.height, first.profile.width
         return X, H, W
 
-    def predict(self, bands: BandSet, *, calibration_id: Optional[str] = None) -> GeoRaster:
-        X, H, W = self._build_features(bands)
+    def _score(self, X: np.ndarray) -> np.ndarray:
+        """Índice (en self._classes) por similitud coseno (+ refinamiento euclidiano etapa-2)."""
         norms = np.linalg.norm(X, axis=1, keepdims=True) + 1e-12
         X_norm = (X / norms).astype(np.float32)
 
@@ -85,7 +85,6 @@ class CosineClassifierAdapter:
 
         # Stage 2: refine stage2 classes with Euclidean distance
         if self._two_stage and len(self._stage2_class_ids) > 0:
-            class_ids = np.array([c.id for c in self._classes])
             stage2_indices = [
                 i for i, c in enumerate(self._classes)
                 if c.id in self._stage2_class_ids
@@ -111,6 +110,12 @@ class CosineClassifierAdapter:
                     id_to_idx = {c.id: i for i, c in enumerate(self._classes)}
                     labels_idx[mask] = np.array([id_to_idx[cid] for cid in refined_ids])
 
+        return labels_idx
+
+    def predict(self, bands: BandSet, *, calibration_id: Optional[str] = None) -> GeoRaster:
+        X, H, W = self._build_features(bands)
+        labels_idx = self._score(X)
+
         class_ids_arr = np.array([c.id for c in self._classes], dtype=np.int16)
         label_arr = class_ids_arr[labels_idx].reshape(H, W)
 
@@ -125,6 +130,14 @@ class CosineClassifierAdapter:
                 transform=p0.transform, crs=p0.crs, nodata=-9999,
             ),
         )
+
+    def predict_points(self, df: pd.DataFrame) -> np.ndarray:
+        """Labels (class-ids, shape (N,)) para muestras 1D (DataFrame con columnas de banda)."""
+        feat = FeatureService()
+        X, _ = feat.from_dataframe(df, self._band_filter, self._include_hsl, self._indices)
+        labels_idx = self._score(X.astype(np.float32))
+        class_ids = np.array([c.id for c in self._classes], dtype=np.int16)
+        return class_ids[labels_idx]
 
     def classes(self) -> Sequence[ClassLabel]:
         return self._classes

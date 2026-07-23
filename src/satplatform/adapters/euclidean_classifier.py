@@ -53,19 +53,22 @@ class EuclideanClassifierAdapter:
             _indices=tuple(indices),
         )
 
+    def _score(self, X: np.ndarray) -> np.ndarray:
+        """Índice (en self._classes) del centroide euclidiano más cercano por fila."""
+        # d2[n, g] = ||X[n] - ref[g]||²
+        d2 = np.stack([
+            np.sum((X - self._reference[g]) ** 2, axis=1)
+            for g in range(len(self._classes))
+        ], axis=1)  # (N, Ng)
+        return np.argmin(d2, axis=1)
+
     def predict(self, bands: BandSet, *, calibration_id: Optional[str] = None) -> GeoRaster:
         feat = FeatureService()
         X, _ = feat.from_bandset(bands, self._band_filter, self._include_hsl, self._indices)
         first = next(iter(bands.bands.values()))  # type: ignore[arg-type]
         H, W = first.profile.height, first.profile.width
 
-        # d2[n, g] = ||X[n] - ref[g]||²
-        d2 = np.stack([
-            np.sum((X - self._reference[g]) ** 2, axis=1)
-            for g in range(len(self._classes))
-        ], axis=1)  # (N, Ng)
-
-        best_idx = np.argmin(d2, axis=1)
+        best_idx = self._score(X)
         class_ids = np.array([c.id for c in self._classes], dtype=np.int16)
         label_arr = class_ids[best_idx].reshape(H, W)
 
@@ -77,6 +80,14 @@ class EuclideanClassifierAdapter:
                 transform=p0.transform, crs=p0.crs, nodata=-9999,
             ),
         )
+
+    def predict_points(self, df: pd.DataFrame) -> np.ndarray:
+        """Labels (class-ids, shape (N,)) para muestras 1D (DataFrame con columnas de banda)."""
+        feat = FeatureService()
+        X, _ = feat.from_dataframe(df, self._band_filter, self._include_hsl, self._indices)
+        best_idx = self._score(X.astype(np.float32))
+        class_ids = np.array([c.id for c in self._classes], dtype=np.int16)
+        return class_ids[best_idx]
 
     def classes(self) -> Sequence[ClassLabel]:
         return self._classes

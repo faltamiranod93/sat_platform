@@ -7,19 +7,18 @@
 ---
 
 ## Última sesión activa
-**Fecha:** 2026-07-09
+**Fecha:** 2026-07-22
 **Computador:** universidad (geotecnia-usm)
 
 ## Qué se hizo
-- Sesión **organizativa** (no de código de la plataforma): montado el **sistema Atlas** — mapa estratégico de las 3 aristas (completar desarrollos / validar resultados / plan tesis).
-- Nuevos artefactos: `ATLAS.md` (3 copias sincronizadas: memoria oficial, `md-faltamirano/`, y esta copia git-trackeada), `CLAUDE.md` en la raíz del Msc, skill `/atlas`, enganche en `/inicio` y `/fin`.
-- Nuevas memorias: `project-geodata-inf491`, `project-laguna-seca-terreno` (carpetas nuevas `geodata/` y `Laguna-Seca Info/`), y `reference-skills-symlinks`.
-- Arreglados los symlinks rotos de skills en `~/.claude/skills` (`/inicio` daba "unknown command").
+- **Milestone 1 (Arista 1) implementado: módulo de evaluación.** Refactor del puerto `PixelClassifierPort` (nuevo `predict_points` + `_score` compartido en los 3 clasificadores; legacy lanza `NotImplementedError`). Nuevos servicios puros `evaluation_folds.py` (spatial-block CV / leave-one-date-out / anchor), `evaluation_metrics.py` (OA/Kappa/PA-UA/F1/Pontius + Moran's I) y `evaluation_service.py` (4 protocolos P0–P3, exclusión de clases <2, hook `norm=` para el RRN). Wiring en `di.py` + subcomando CLI `evaluate`. **35 tests nuevos, 186 en total, todo verde.**
+- **Ejecutado en `01-Laguna-Seca-example`** (2024-01-23, 552 pts, 11 clases): CV aleatoria infla la métrica → **gap OA P0−P1 ≈ +0.08, kappa 0.87→0.35**; confusión dominante clase 3↔11. CSVs en `04-Analysis/EVAL/`. Ver [[laguna-eval-m1-baseline]].
+- Antes: estudio a fondo de 9 papers en `literatura/INDEX.md` + roadmap A–E de Arista 1 (spec del M1 al 100%). Aristas renombradas.
 
 ## Próximo paso inmediato
-Retomar la **Arista 1 (código)**: mejorar la separabilidad **clase 3 (terreno natural) vs 11 (sombreado)** usando el explorador Streamlit (ya commiteado, `d8c5ad8`).
+Correr P2/P3 (TFC temporal) con escenas 2020/21/22, luego arrancar **M2: portar el RRN legacy** a `TemporalNormPort/Adapter/Service` y medirlo con el hook `norm=` del evaluador (test de no-regresión).
 
 ## Pendiente / bloqueado
-- **Arista 3 (tesis):** roadmap creado pero vacío — bloqueado esperando que el usuario aporte **plazos, formato/plantilla y comité/profesor guía** del programa.
-- **Arista 2 (validación):** cruzar el "Espejo de Agua" batimétrico (enero 2024) con la superficie NDWI de la escena 2024-01-23; validación cuantitativa del clasificador (train/test de los 552 pts).
-- Materializar FEATURES/MASK (reservados en el contrato).
+- **P2/P3 en el ejemplo:** el dir `01-Laguna-Seca-example` solo tiene escenas 2023/2024/2025; el TFC temporal necesita las escenas 2020-04-03 / 2021-04-28 / 2022-04-28 (existen en el GeoJSON v7, faltan las escenas).
+- **M2 (RRN):** estrategia de ajuste diferida (portar legacy fiel vs polígonos Chen vs MSAC+Tukey Xu) — decidir al implementar.
+- `literatura/INDEX.md` vive fuera de git (no viaja); espejar si se necesita en el otro computador.
