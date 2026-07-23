@@ -15,9 +15,9 @@ Mapa **estratégico** de todo `~/Documents/Msc-sentinel2/`, organizado en **tres
 
 **Cómo navegar (capas):**
 - **Atlas** (este archivo) = estratégico, "dónde va la tesis" (visión por aristas + roadmap).
-- **`sat_platform/.claude/SESION.md`** = táctico, "qué hice la última sesión / próximo paso". Es la fuente más fresca del estado de la Arista 1.
+- **`sat_platform/.claude/SESION.md`** = táctico, "qué hice la última sesión / próximo paso" (git-trackeado, viaja entre computadores). Es la fuente más fresca del estado de la Arista 1.
 - **`geodata/`** = sub-proyecto **cerrado** (curso INF491, defensa 1-jul-2026); antecedente metodológico, no trabajo activo. Ver [[project-geodata-inf491]].
-- Skills de sesión: `/inicio` (abre), `/fin` (cierra), `/sync` (git). El atlas se apoya encima de ellas.
+- Skills de sesión ya existentes: `/inicio` (abre sesión), `/fin` (cierra), `/sync` (git). El atlas se apoya encima de ellas, no las reemplaza.
 
 ---
 
@@ -37,15 +37,16 @@ Mapa **estratégico** de todo `~/Documents/Msc-sentinel2/`, organizado en **tres
 
 ## Arista 2 — Validar los resultados
 **Qué es:** contrastar la salida satelital (superficie NDWI, classmaps Mahalanobis) contra datos de terreno reales.
-**Enlaces:** [[project-laguna-seca-terreno]] (5 Excel operacionales nuevos) · [[project-laguna-seca-findings]] ("Agua"=nodata, sin filtro de calidad, umbrales sin calibrar)
+**Enlaces:** [[project-laguna-seca-terreno]] (monitoreo Geomonitoring/BHP: batimetría AUV + clasificación GeoEye 7 clases + planillas TLS) · [[project-laguna-seca-findings]] ("Agua"=nodata, umbrales sin calibrar) · [[laguna-mcal-grid-mismatch]] (todo en UTM 19S)
 
 **Estado actual:**
-- Llegaron datos de terreno (`Laguna-Seca Info/TLS/`): volumen/cota de laguna, batimetría (áreas por zona, incl. "Espejo de Agua"), revancha por PK, depositación por sector.
+- Disponible el **monitoreo profesional de terreno** en `info Laguna-Seca/`: informes Geomonitoring (`Informes/`) + 5 planillas operacionales (`TLS/`). El informe EB-03 (2019) es ground truth **y benchmark**: hace monitoreo satelital + clasificación supervisada de 7 clases sobre GeoEye-1 (50 cm) — justo lo que la tesis replica con Sentinel-2 (10 m).
 - Aún **sin validación cuantitativa**: los 552 pts de entrenamiento no tienen split train/test; los classmaps no están contrastados con terreno.
 
 **Próximos pasos:**
-- Cruzar el **"Espejo de Agua"** batimétrico (enero 2024) con la superficie NDWI de la escena satelital **2024-01-23** (fechas más cercanas).
-- Contrastar volumen/cota de laguna vs. área de agua detectada; usar como ground truth para recalibrar umbrales (arreglar H1 "Agua"=nodata primero).
+- Cruzar el **"Espejo de Agua"** batimétrico (enero 2024) con la superficie NDWI de la escena satelital **2024-01-23**.
+- Contrastar volumen/cota de laguna vs. área de agua detectada; recalibrar umbrales (arreglar H1 "Agua"=nodata primero).
+- **Comparar la clasificación 11-clases Sentinel-2 vs. las 7 clases GeoEye de Geomonitoring** (mapeo de clases, superficies por zona).
 - Validación cuantitativa del clasificador (matriz de confusión con los 552 pts).
 
 ---
@@ -69,6 +70,9 @@ Mapa **estratégico** de todo `~/Documents/Msc-sentinel2/`, organizado en **tres
 
 ## Historial
 _(la skill `/atlas` agrega aquí una entrada por sesión relevante; nunca borra entradas)_
+
+### 2026-07-14
+- **Arista 2 reforzada:** documentado el monitoreo profesional de terreno (Geomonitoring/BHP) en `info Laguna-Seca/`. Hallazgo clave: el informe EB-03 (2019) hace clasificación satelital supervisada de 7 clases sobre GeoEye-1 (50 cm) → es el **benchmark comercial** de la tesis (Sentinel-2, 10 m). Reorganizada `Informes/` por fecha/servicio. Memoria [[project-laguna-seca-terreno]] ampliada.
 
 ### 2026-07-09
 - **Sistema Atlas creado y operativo.** Definidas las 3 aristas y mapeadas a memorias/artefactos. Creadas memorias `project-geodata-inf491` y `project-laguna-seca-terreno` (carpetas nuevas: curso INF491 + datos de terreno). `CLAUDE.md` en la raíz, skill `/atlas`, y enganche en `/inicio` y `/fin`. Arreglados symlinks rotos de skills en `~/.claude/skills` (ver [[reference-skills-symlinks]]). Explorador Streamlit confirmado commiteado (`d8c5ad8`). Arista 3 queda como roadmap vacío: **pendiente que el usuario aporte plazos/formato/comité del programa**.
